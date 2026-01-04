@@ -1,0 +1,15 @@
+[Unit]
+Description=CV Live Upload Watcher Service
+After=network.target
+
+[Service]
+# CHANGE THESE PATHS TO MATCH YOUR PI SETUP
+User=pi
+WorkingDirectory=/home/pi/cv-live
+ExecStart=/home/pi/cv-live/venv/bin/python upload_watcher.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

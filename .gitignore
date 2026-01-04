@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+.venv/
+test-env/
+
+# Environment Variables (Secrets)
+.env
+
+# Runtime Data
+recordings/
+*.mp4
+*.avi
+*.jpg
+
+# Logs
+*.log
+system.log
+
+# Mac
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/

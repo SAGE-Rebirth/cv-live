@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CV Live Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>CV Live Controller</h1>
+            <div id="status-badge" class="badge">Checking...</div>
+        </header>
+
+        <main>
+            <div class="video-container">
+                <img src="/video_feed" alt="Live Stream" class="video-feed">
+            </div>
+
+            <div class="controls">
+                <button id="btn-start" onclick="sendCommand('start')">Start Recording</button>
+                <button id="btn-stop" onclick="sendCommand('stop')">Stop Recording</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const statusBadge = document.getElementById('status-badge');
+
+        async function updateStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                if (data.recording) {
+                    statusBadge.textContent = 'RECORDING';
+                    statusBadge.className = 'badge recording';
+                } else {
+                    statusBadge.textContent = 'IDLE';
+                    statusBadge.className = 'badge idle';
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function sendCommand(cmd) {
+            try {
+                await fetch(`/api/${cmd}`, { method: 'POST' });
+                setTimeout(updateStatus, 500);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Poll status every 2 seconds
+        setInterval(updateStatus, 2000);
+        updateStatus();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,18 @@
+[Unit]
+Description=CV Live Camera Service
+After=network.target video.target
+
+[Service]
+# CHANGE THESE PATHS TO MATCH YOUR PI SETUP
+User=pi
+WorkingDirectory=/home/pi/cv-live
+ExecStart=/home/pi/cv-live/venv/bin/python main.py
+Restart=always
+RestartSec=5
+# Resource Limits (Hardening)
+MemoryMax=500M
+CPUQuota=350%
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

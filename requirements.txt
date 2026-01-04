@@ -1,0 +1,8 @@
+opencv-python
+mediapipe
+boto3
+python-dotenv
+numpy
+fastapi
+uvicorn
+jinja2

@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - [API] - %(levelnam
 logger = logging.getLogger(__name__)
 
 from src.service import CameraService
+from src.config import Config
 
 load_dotenv()
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "my-cv-bucket")
@@ -127,6 +128,38 @@ def stop_recording():
     logger.info("API: Received manual Stop request.")
     camera_service.toggle_recording(False)
     return {"status": "stopped"}
+
+@app.get("/api/config", tags=["Configuration"])
+def get_config():
+    """
+    Get all current configuration settings (Static + Dynamic).
+    """
+    return Config.get_all()
+
+class ConfigUpdate(BaseModel):
+    key: str
+    value: float # Union[int, float] simplified
+
+@app.post("/api/config", tags=["Configuration"])
+def update_config(update: ConfigUpdate):
+    """
+    Update a dynamic setting (e.g. DETECTION_RATE).
+    Writes to settings.yaml.
+    """
+    # Allowed keys verification
+    ALLOWED = ["DETECTION_RATE", "MODEL_COMPLEXITY", "RECORDING_SEGMENT_DURATION", 
+               "MAX_DISK_USAGE_PERCENT", "RETENTION_COUNT"]
+    
+    if update.key not in ALLOWED:
+        return JSONResponse(status_code=400, content={"error": f"Key {update.key} is not editable or invalid."})
+
+    # Cast to int if it looks like one (YAML prefers ints)
+    val = update.value
+    if val.is_integer():
+        val = int(val)
+        
+    Config.update_setting(update.key, val)
+    return {"status": "updated", "key": update.key, "value": val}
 
 def gen_frames():
     """Generator for video streaming"""

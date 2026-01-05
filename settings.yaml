@@ -1,0 +1,10 @@
+# Dynamic Settings - Tunable via Dashboard
+
+# AI Performance
+DETECTION_RATE: 5
+MODEL_COMPLEXITY: 0
+
+# Storage Limits
+RECORDING_SEGMENT_DURATION: 300
+MAX_DISK_USAGE_PERCENT: 85
+RETENTION_COUNT: 100

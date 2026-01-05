@@ -130,9 +130,27 @@ LOG_LEVEL=INFO   # INFO is standard. Use DEBUG for more details.
 
 ## Usage
 
-Start the application manually:
+### 1. Running the Server
+
+**Option A: Standard Production Mode (Easiest)**
+This runs the server using the internal Uvicorn configuration.
 ```bash
 python3 main.py
+```
+
+**Option B: Development Mode (Hot Reload)**
+If you are editing code, use this to auto-restart the server when files change.
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Server Output:**
+You should see logs indicating the server started:
+```text
+INFO:     Started server process [1234]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 ### Gestures

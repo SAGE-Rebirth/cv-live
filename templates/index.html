@@ -11,9 +11,19 @@
 <body>
     <div class="container">
         <header>
-            <h1>CV Live Controller</h1>
-            <div id="status-badge" class="badge">Checking...</div>
+            <div class="header-left">
+                <h1>CV Live</h1>
+                <div id="status-badge" class="badge">Checking...</div>
+            </div>
+            <button id="btn-settings" onclick="openSettings()">⚙️ Settings</button>
         </header>
+
+        <!-- Telemetry Bar -->
+        <div class="telemetry-bar">
+            <div class="stat"><span>FPS:</span> <span id="stat-fps">--</span></div>
+            <div class="stat"><span>Res:</span> <span id="stat-res">--</span></div>
+            <div class="stat"><span>Disk:</span> <span id="stat-disk">--%</span></div>
+        </div>
 
         <main>
             <div class="video-container">
@@ -27,13 +37,44 @@
         </main>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSettings()">&times;</span>
+            <h2>Configuration</h2>
+
+            <div class="form-group">
+                <label>AI Detection Rate (Every N frames)</label>
+                <input type="number" id="inp-detection-rate" min="1" max="30">
+                <small>Higher = Less CPU usage. 1 = Every frame.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Max Disk Usage (%)</label>
+                <input type="number" id="inp-disk-limit" min="10" max="99">
+            </div>
+
+            <div class="form-group">
+                <label>Segment Duration (Seconds)</label>
+                <input type="number" id="inp-duration" min="60" max="3600">
+            </div>
+
+            <div class="form-actions">
+                <button onclick="saveSettings()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const statusBadge = document.getElementById('status-badge');
 
         async function updateStatus() {
             try {
-                const res = await fetch('/api/status');
+                // Get Metrics
+                const res = await fetch('/metrics');
                 const data = await res.json();
+
+                // Update Status Badge
                 if (data.recording) {
                     statusBadge.textContent = 'RECORDING';
                     statusBadge.className = 'badge recording';
@@ -41,6 +82,12 @@
                     statusBadge.textContent = 'IDLE';
                     statusBadge.className = 'badge idle';
                 }
+
+                // Update Telemetry Bar
+                document.getElementById('stat-fps').textContent = data.fps_configured;
+                document.getElementById('stat-res').textContent = "640x480"; // Ideally fetching config
+                document.getElementById('stat-disk').textContent = data.disk_usage_percent + '%';
+
             } catch (e) {
                 console.error(e);
             }
@@ -52,6 +99,48 @@
                 setTimeout(updateStatus, 500);
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        // --- Settings Modal Logic ---
+        const modal = document.getElementById("settings-modal");
+
+        async function openSettings() {
+            modal.style.display = "block";
+            // Fetch current config
+            const res = await fetch('/api/config');
+            const cfg = await res.json();
+
+            document.getElementById('inp-detection-rate').value = cfg.DETECTION_RATE || 5;
+            document.getElementById('inp-disk-limit').value = cfg.MAX_DISK_USAGE_PERCENT || 85;
+            document.getElementById('inp-duration').value = cfg.RECORDING_SEGMENT_DURATION || 300;
+        }
+
+        function closeSettings() {
+            modal.style.display = "none";
+        }
+
+        async function saveSettings() {
+            const updates = [
+                { key: "DETECTION_RATE", value: Number(document.getElementById('inp-detection-rate').value) },
+                { key: "MAX_DISK_USAGE_PERCENT", value: Number(document.getElementById('inp-disk-limit').value) },
+                { key: "RECORDING_SEGMENT_DURATION", value: Number(document.getElementById('inp-duration').value) }
+            ];
+
+            for (let u of updates) {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(u)
+                });
+            }
+            alert("Settings Saved!");
+            closeSettings();
+        }
+
+        window.onclick = function (event) {
+            if (event.target == modal) {
+                closeSettings();
             }
         }
 

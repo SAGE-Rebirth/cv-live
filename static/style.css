@@ -14,11 +14,117 @@ body {
     text-align: center;
 }
 
+/* Header Layout */
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+#btn-settings {
+    background-color: #6c757d;
+    font-size: 0.9rem;
+    padding: 8px 15px;
+}
+
+/* Telemetry Bar */
+.telemetry-bar {
+    display: flex;
+    justify-content: space-around;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-family: monospace;
+}
+
+.stat span:first-child {
+    color: #aaa;
+    margin-right: 5px;
+}
+
+.stat span:last-child {
+    color: #fff;
+    font-weight: bold;
+}
+
+/* --- Modal --- */
+.modal {
+    display: none; 
+    position: fixed; 
+    z-index: 1000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.6); 
+    backdrop-filter: blur(5px);
+}
+
+.modal-content {
+    background-color: #1e1e1e;
+    margin: 10% auto; 
+    padding: 20px;
+    border: 1px solid #333;
+    width: 90%; 
+    max-width: 500px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: white;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #ddd;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #252525;
+    color: white;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #777;
+    font-size: 0.8rem;
+}
+
+.form-actions {
+    text-align: right;
+}
+
+.form-actions button {
+    background-color: #007bff;
+    width: auto;
+    padding: 10px 20px;
 }
 
 .video-container {

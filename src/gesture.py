@@ -1,66 +1,85 @@
 import mediapipe as mp
+import time
+import os
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+# Model Path
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "hand_landmarker.task")
 
 class GestureDetector:
     def __init__(self):
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        self.mp_draw = mp.solutions.drawing_utils
-
-    def process(self, image):
-        """Processes the image and returns MediaPipe results."""
-        results = self.hands.process(image)
-        return results
-
-    def _is_finger_extended(self, landmarks, tip_idx, pip_idx):
-        """
-        Returns True if the finger tip is higher (lower Y value) than the PIP joint.
-        Assumes an upright hand position.
-        """
-        return landmarks[tip_idx].y < landmarks[pip_idx].y
-
-    def detect_gesture(self, results):
-        """
-        Analyzes landmarks to return a gesture string:
-        - "START_RECORDING": Peace Sign (Index + Middle extended).
-        - "STOP_RECORDING": Open Palm (At least 4 fingers extended).
-        - None: No specific gesture detected.
-        """
-        if not results.multi_hand_landmarks:
-            return None
-
-        # Only check the first hand detected
-        lm = results.multi_hand_landmarks[0].landmark
+        # Create an HandLandmarker object.
+        base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=0.5,
+            min_hand_presence_confidence=0.5,
+            min_tracking_confidence=0.5)
         
-        # Check extensions for non-thumb fingers (Index to Pinky)
-        # 8: Index Tip, 6: Index PIP
-        index_ext = self._is_finger_extended(lm, 8, 6)
-        # 12: Middle Tip, 10: Middle PIP
-        middle_ext = self._is_finger_extended(lm, 12, 10)
-        # 16: Ring Tip, 14: Ring PIP
-        ring_ext = self._is_finger_extended(lm, 16, 14)
-        # 20: Pinky Tip, 18: Pinky PIP
-        pinky_ext = self._is_finger_extended(lm, 20, 18)
+        self.detector = vision.HandLandmarker.create_from_options(options)
+
+    def detect_gesture(self, image):
+        """
+        Processes the image and returns (gesture_string, landmarks).
+        """
+        # Convert the BGR image to RGB
+        rgb_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
         
-        # Thumb Logic:
-        # Thumb detection is often noisy depending on hand orientation (palm facing in vs out).
-        # We focus on the other 4 fingers for high-confidence triggers.
+        # Calculate timestamp (monotonic)
+        # MediaPipe requires purely increasing timestamps in VIDEO mode
+        # We can use time.time() * 1000 converted to int
+        timestamp_ms = int(time.time() * 1000)
         
-        # Gesture Logic
+        # Detect
+        detection_result = self.detector.detect_for_video(rgb_image, timestamp_ms)
+        
+        # Analyze
+        gesture = self._analyze_landmarks(detection_result)
+        
+        # Extract landmarks for visualization (if any)
+        landmarks_list = []
+        if detection_result.hand_landmarks:
+             # Convert NormalizedLandmark objects to simple list of dicts or just pass object if picklable
+             # For now, let's pass the raw list of NormalizedLandmark objects 
+             # (but be careful about pickling across processes - better to convert to primitives if needed)
+             # We'll stick to returning the raw object list for now.
+             landmarks_list = detection_result.hand_landmarks[0]
+
+        return gesture, landmarks_list
+
+    def _analyze_landmarks(self, results):
+        """
+        Analyzes landmarks to return a gesture string.
+        """
+        if not results.hand_landmarks:
+             return None
+             
+        # Get first hand
+        lm = results.hand_landmarks[0]
+        
+        # Helper to get Y coord (NormalizedLandmark has x, y, z)
+        # Finger Tips: 8(Index), 12(Middle), 16(Ring), 20(Pinky)
+        # Finger PIPs: 6(Index), 10(Middle), 14(Ring), 18(Pinky)
+        
+        def is_extended(tip_idx, pip_idx):
+            return lm[tip_idx].y < lm[pip_idx].y
+            
+        index_ext = is_extended(8, 6)
+        middle_ext = is_extended(12, 10)
+        ring_ext = is_extended(16, 14)
+        pinky_ext = is_extended(20, 18)
         
         # 1. Start Recording: "Peace Sign"
         # Index and Middle are UP. Ring and Pinky are DOWN.
         if index_ext and middle_ext and not ring_ext and not pinky_ext:
             return "START_RECORDING"
         
-        # 2. Stop Recording: "Open Palm" (High Five)
-        # All 4 main fingers are UP. 
-        # (We ignore thumb to avoid false negatives if thumb is tucked slightly).
+        # 2. Stop Recording: "Open Palm"
         if index_ext and middle_ext and ring_ext and pinky_ext:
             return "STOP_RECORDING"
             
         return None
+

@@ -15,6 +15,7 @@ class CaptureProcess(multiprocessing.Process):
         self.daemon = True # Kill when main dies
 
     def run(self):
+        self.shared_state.refresh() # Re-link shared memory
         logger.info(f"CaptureProcess Started on Core: {multiprocessing.cpu_count()}")
         cap = cv2.VideoCapture(self.camera_index)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, Config.FRAME_WIDTH)
@@ -24,8 +25,11 @@ class CaptureProcess(multiprocessing.Process):
         while self.shared_state.running_flag.value:
             ret, frame = cap.read()
             if ret:
+                # Force resize to match shared memory expectation
+                if frame.shape != self.shared_state.frame_shape:
+                    frame = cv2.resize(frame, (Config.FRAME_WIDTH, Config.FRAME_HEIGHT))
+                
                 # Direct write to shared memory
-                # We need to ensure connection is correct (BGR)
                 self.shared_state.write_frame(frame)
             else:
                 logger.warning("CaptureProcess: Failed to grab frame.")

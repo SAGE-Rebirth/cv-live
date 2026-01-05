@@ -65,6 +65,17 @@
         brew install ffmpeg
         ```
 
+5.  **Download MediaPipe Model**
+    The application requires the official MediaPipe Hand Landmarker model.
+    1.  Create the models directory:
+        ```bash
+        mkdir -p src/models
+        ```
+    2.  Download the model using `curl`:
+        ```bash
+        curl -L https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task -o src/models/hand_landmarker.task
+        ```
+
 ## Configuration (Beginner Friendly Guide)
 
 This project uses a `.env` file to manage all settings. This makes it easy to change settings without touching the code.
@@ -123,9 +134,9 @@ MODEL_COMPLEXITY=0
 DETECTION_RATE=5
 ```
 
-#### 5. Debugging
+#### 6. Logging
 ```ini
-LOG_LEVEL=INFO   # INFO is standard. Use DEBUG for more details.
+LOGS_DIR=logs             # Folder where application logs are saved.
 ```
 
 ## Usage
@@ -235,9 +246,11 @@ To run this application as a background service on Raspberry Pi:
 
 ## Architecture & Optimization
 *   **src/main.py**: FastAPI Server entry point.
-*   **src/service.py**: Central orchestrator. Runs a loop that reads from `ThreadedCamera`, skips N frames (`DETECTION_RATE`), runs `GestureDetector`, and pipes frames to `FFmpegRecorder`.
-*   **src/ffmpeg_recorder.py**: Spawns an `ffmpeg` subprocess. Writes raw video frames to `stdin` using a separate thread/queue to prevent blocking.
+*   **src/service.py**: Central orchestrator. Manages multi-process lifecycle, coordinates frame flow between shared memory, and handles recording triggers.
+*   **src/processes/inference.py**: Dedicated AI process using **MediaPipe Tasks API**. Performs gesture detection independently to avoid blocking capture.
+*   **src/recorder.py**: Implements `VideoRecorder` using OpenCV's `VideoWriter`. Handles segment rotation and automatic disk space management.
 *   **src/storage.py**: Background thread manager for S3 uploads. Handles retries and local disk cleanup.
+*   **logs/**: Internal application logs are saved to `logs/app.log` for troubleshooting.
 
 ## Dos and Donts
 

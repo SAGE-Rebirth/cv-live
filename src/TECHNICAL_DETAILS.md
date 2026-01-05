@@ -16,18 +16,16 @@ We do **not** read frames in the main loop. Instead, we use a dedicated **Captur
 
 ---
 
-## 2. Gesture Recognition (MediaPipe)
-
 ### Mechanism
-We use **Google MediaPipe Hands**, a graph-based framework for hand tracking.
-*   **Model**: Single-hand detection model (`max_num_hands=1`).
-*   **Input**: RGB Images (converted from OpenCV's BGR).
-*   **Output**: 21 3D Landmarks per hand.
+We use the **MediaPipe Tasks API** (`HandLandmarker`) for robust hand tracking. 
+*   **Model**: Official Hand Landmarker Task Bundle (`src/models/hand_landmarker.task`).
+*   **Running Mode**: `VIDEO`. Optimized for continuous frame processing.
+*   **Output**: Normalized landmarks and hand handedness (Left/Right).
 
 ### Logic (`src/gesture.py`)
-Instead of complex Machine Learning classifiers, we use efficient **Geometric Heuristics**:
-*   **Peace Sign (Start)**: Checks if Index and Middle finger tips are **higher** (lower Y-coordinate) than their knuckles, while Ring and Pinky are **lower**.
-*   **Open Palm (Stop)**: Checks if at least 4 fingers are fully extended.
+Geometric heuristics are applied to the 21 normalized 3D landmarks:
+*   **Peace Sign (Start)**: Indices 8 (Index Tip) and 12 (Middle Tip) are significantly above their respective MCP knuckles, while others are curled.
+*   **Open Palm (Stop)**: Identifies if at least 4 fingers are fully extended (Tip Y < MCP Y).
 
 ### Performance & AI Throttling
 *   **Inference Speed**: On a Pi 5, MediaPipe takes ~30-50ms per frame.
@@ -38,22 +36,23 @@ Instead of complex Machine Learning classifiers, we use efficient **Geometric He
 
 ---
 
-## 3. Video Recording (FFmpeg Pipeline)
+## 3. Video Recording (OpenCV VideoWriter)
 
 ### Mechanism
-We bypass OpenCV's built-in `VideoWriter` in favor of a direct **FFmpeg Subprocess** (`src/ffmpeg_recorder.py`). This allows us to access professional-grade compression features not easily available in OpenCV.
+The system utilizes **OpenCV's `VideoWriter`** managed by `src/recorder.py`. 
 
 ### The Pipeline
-1.  **Input**: Raw Video Frames (BGR/YUV) are written to `subprocess.stdin.write()`.
+1.  **Buffered Writing**: Frames are passed from the shared memory to the `VideoRecorder`.
 2.  **Encoding**:
-    *   **Codec**: `libx264` (H.264).
-    *   **Preset**: `ultrafast` (Minimizes CPU usage, slightly larger file size).
-    *   **CRF (Constant Rate Factor)**: `23` (Maintains visual quality while optimizing size, unlike fixed bitrate).
-3.  **Container**: Output is muxed into `.mp4`.
+    *   **Container**: `.mp4`.
+    *   **Codec Fallback**: The system attempts to initialize with `avc1` (H.264), falling back to `mp4v` or `MJPG` if hardware-specific encoders are unavailable.
+3.  **Rotation & Cleanup**:
+    *   **Auto-Segment**: Segments are rotated based on `RECORDING_SEGMENT_DURATION`.
+    *   **Disk Watchdog**: Monitors disk percentage in real-time. If it hits the limit, it deletes the oldest file *before* starting a new write to prevent the OS from locking up.
 
 ### Why this is better
-*   **Space**: H.264 with CRF is ~90% smaller than MJPEG or raw AVI.
-*   **Speed**: Operating on a separate thread ensures disk writes never block the camera or AI.
+*   **Reliability**: Using OpenCV's native wrapper is more portable across different OS versions (macOS/Pi OS) compared to direct FFmpeg subprocess manipulation.
+*   **Efficiency**: The recording logic is integrated into the main orchestrator while maintaining asynchronous behavior through process separation.
 
 ---
 

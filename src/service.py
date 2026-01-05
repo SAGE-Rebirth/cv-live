@@ -4,15 +4,30 @@ import time
 import os
 import logging
 from src.gesture import GestureDetector
-from src.ffmpeg_recorder import FFmpegRecorder
+from src.recorder import VideoRecorder
 from src.storage import S3Uploader
 from src.config import Config
 from src.camera import ThreadedCamera
+import multiprocessing
+import queue
+from src.processes.shared_state import SharedStateManager
+from src.processes.capture import CaptureProcess
+from src.processes.inference import InferenceProcess
 
 # Configure logging
+# Configure logging
+if not os.path.exists(Config.LOGS_DIR):
+    os.makedirs(Config.LOGS_DIR)
+
+log_file = os.path.join(Config.LOGS_DIR, "app.log")
+
 logging.basicConfig(
     level=getattr(logging, Config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(log_file)
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -24,7 +39,7 @@ class CameraService:
         
         # Components
         self.uploader = S3Uploader(bucket_name=self.bucket_name)
-        self.recorder = FFmpegRecorder(
+        self.recorder = VideoRecorder(
             output_dir=Config.RECORDINGS_DIR,
             width=Config.FRAME_WIDTH,
             height=Config.FRAME_HEIGHT,
@@ -39,10 +54,39 @@ class CameraService:
         self.shared_state = SharedStateManager()
         self.result_queue = multiprocessing.Queue(maxsize=10)
         
-        self.capture_process = CaptureProcess(self.shared_state, camera_index)
+        self.capture_process = CaptureProcess(self.shared_state, Config.CAMERA_INDEX)
         self.inference_process = InferenceProcess(self.shared_state, self.result_queue)
         
         self.processing_thread = None
+        self.lock = threading.Lock()
+        self.current_frame = None
+
+    def get_status(self):
+        """Returns the current status of the service."""
+        return {
+            "recording": self.recorder.is_recording
+        }
+
+    def toggle_recording(self, state: bool):
+        """Manually toggle recording state."""
+        if state:
+            self.recorder.start_recording()
+        else:
+            self.recorder.stop_recording()
+
+    def _handle_gesture_logic(self, gesture):
+        """
+        Reacts to the detected gesture string.
+        """
+        if gesture == "START_RECORDING":
+            if not self.recorder.is_recording:
+                logger.info("Gesture Detected: START RECORDING (Peace Sign)")
+                self.recorder.start_recording()
+        
+        elif gesture == "STOP_RECORDING":
+            if self.recorder.is_recording:
+                logger.info("Gesture Detected: STOP RECORDING (Open Palm)")
+                self.recorder.stop_recording()
 
     def start(self):
         if self.running:
@@ -76,16 +120,26 @@ class CameraService:
 
     def _main_loop(self):
         last_gesture = None
+        last_frame_index = -1
         
         while self.running:
-            # 1. Get Frame from Shared Memory
+            # 1. Get Frame Index
+            current_index = self.shared_state.frame_index.value
+            
+            if current_index == last_frame_index:
+                time.sleep(0.005) # Yield to avoid busy loop
+                continue
+                
+            last_frame_index = current_index
+
+            # 2. Get Frame from Shared Memory
             try:
                 frame = self.shared_state.get_frame()
             except Exception:
                  time.sleep(0.01)
                  continue
 
-            # 2. Check for Inference Results
+            # 3. Check for Inference Results
             try:
                 while not self.result_queue.empty():
                     gesture = self.result_queue.get_nowait()
@@ -95,7 +149,7 @@ class CameraService:
             except queue.Empty:
                 pass
             
-            # 3. Draw Overlay (In main process for display)
+            # 4. Draw Overlay (In main process for display)
             # Make a copy for UI encoding to keep it safe? Or just use it.
             # MJPEG needs bytes.
             
@@ -105,7 +159,7 @@ class CameraService:
             if last_gesture:
                 cv2.putText(frame,f"Gesture: {last_gesture}",(10,60),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-            # 4. Pipe to Recorder
+            # 5. Pipe to Recorder
             if self.recorder.is_recording:
                 self.recorder.write_frame(frame)
 

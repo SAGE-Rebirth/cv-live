@@ -11,9 +11,24 @@ logger = logging.getLogger(__name__)
 class S3Uploader:
     def __init__(self, bucket_name, region_name=Config.S3_REGION):
         self.bucket_name = bucket_name
-        self.s3_client = boto3.client('s3', region_name=region_name)
+        self.enabled = bool(bucket_name and bucket_name.strip())
+        
+        if self.enabled:
+            try:
+                self.s3_client = boto3.client('s3', region_name=region_name)
+                logger.info(f"S3 Uploader Initialized. Bucket: {self.bucket_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Boto3 client: {e}")
+                self.enabled = False
+        else:
+            logger.info("No S3 Bucket configured. Running in Local Mode (Storage Only).")
 
     def upload_file(self, file_path, object_name=None):
+        if not self.enabled:
+            # In Local Mode, we just trigger cleanup
+            self._cleanup_local_storage()
+            return
+
         if object_name is None:
             object_name = os.path.basename(file_path)
 

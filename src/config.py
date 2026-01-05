@@ -77,14 +77,16 @@ class Config(metaclass=ConfigMeta):
     FRAME_HEIGHT = int(os.getenv("FRAME_HEIGHT", 480))
     FPS = int(os.getenv("FPS", 30))
     
-    # Cloud
-    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "my-cv-bucket")
-    S3_REGION = os.getenv("S3_REGION", "us-east-1")
+    # Cloud (Optional - leave empty for Local Mode)
+    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
+    S3_REGION = os.getenv("S3_REGION", "ap-south-1")
     UPLOAD_MAX_RETRIES = 3
     
     # Infra
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
     RECORDINGS_DIR = os.getenv("RECORDINGS_DIR", "recordings")
+    LOGS_DIR = os.getenv("LOGS_DIR", "logs")
 
     # --- Dynamic Settings (Managed by Metaclass via settings.yaml) ---
     # These types are here for IDE hints / fallback if needed, but __getattr__ overrides if in yaml.

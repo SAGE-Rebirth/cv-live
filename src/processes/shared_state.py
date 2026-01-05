@@ -37,6 +37,16 @@ class SharedStateManager:
         self.recording_flag = multiprocessing.Value('b', False)
         self.frame_index = multiprocessing.Value('L', 0) # Unsigned Long
 
+    def refresh(self):
+        """
+        Re-link the numpy array to the shared memory buffer.
+        Must be called in child processes after 'spawn'.
+        """
+        # In spawn mode, self.shm is a valid handle (recreated by pickling machinery),
+        # but self.shared_frame likely became a copy of data during pickle.
+        # We discard the copy and create a new view on the shared buffer.
+        self.shared_frame = np.ndarray(self.frame_shape, dtype=np.uint8, buffer=self.shm.buf)
+
     def get_frame(self):
         """Read current frame from shared memory."""
         # Note: This might read while writing happens (tearing), but for CV it's usually fine 

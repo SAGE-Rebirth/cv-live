@@ -4,6 +4,8 @@ import os
 import datetime
 import logging
 from src.config import Config
+import shutil
+import glob
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +28,48 @@ class VideoRecorder:
         if self.is_recording:
             return
         
+        if not self._ensure_disk_space():
+            logger.error("Disk Full and Cleanup Failed! Cannot start recording.")
+            return
+
         self.is_recording = True
         self._start_new_file()
         logger.info("Recording Started.")
+
+    def _ensure_disk_space(self):
+        """
+        Ensures there is enough disk space. 
+        If disk usage > CONFIG.MAX_DISK_USAGE_PERCENT, deletes oldest recordings.
+        Returns True if space is available (or made available), False if critical failure.
+        """
+        try:
+            while True:
+                total, used, free = shutil.disk_usage(self.output_dir)
+                percent = (used / total) * 100
+                
+                if percent < Config.MAX_DISK_USAGE_PERCENT:
+                    return True
+                
+                # Disk is full, try to delete oldest file
+                logger.warning(f"Disk usage {percent:.1f}% > {Config.MAX_DISK_USAGE_PERCENT}%. Cleaning up...")
+                
+                files = glob.glob(os.path.join(self.output_dir, "*.mp4"))
+                if not files:
+                    logger.error("Disk full and no files to delete!")
+                    return False
+                
+                # Sort by modification time (oldest first)
+                oldest_file = min(files, key=os.path.getmtime)
+                try:
+                    os.remove(oldest_file)
+                    logger.info(f"Deleted oldest file to free space: {oldest_file}")
+                except OSError as e:
+                    logger.error(f"Failed to delete {oldest_file}: {e}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Error in disk space check: {e}")
+            return False
 
     def stop_recording(self):
         if not self.is_recording:

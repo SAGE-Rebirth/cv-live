@@ -17,6 +17,7 @@ class InferenceProcess(multiprocessing.Process):
         self.daemon = True
 
     def run(self):
+        self.shared_state.refresh() # Re-link shared memory
         logger.info("InferenceProcess Started.")
         detector = GestureDetector()
         
@@ -50,31 +51,28 @@ class InferenceProcess(multiprocessing.Process):
             # Process Frame
             frame = self.shared_state.get_frame() # Zero-copy read
             
-            # Convert for MediaPipe
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = detector.process(rgb_frame)
-            gesture = detector.detect_gesture(results)
+            # Convert for MediaPipe (BGR to RGB is handled inside detect_gesture now if needed, 
+            # actually prompt said to just call detect_gesture(frame). 
+            # But wait, my implementation of detect_gesture EXPECTS BGR and converts it. 
+            # Yes, lines 27-28 in new gesture.py: "Convert the BGR image to RGB".
+            # So we pass BGR frame directly.
             
-            # Put result in queue
-            # We can't pickle the whole 'results' object easily usually?
-            # MediaPipe results are complex C++ wrappers.
-            # We should extract what we need: landmarks list.
-            
-            # Simplified result for IPC
-            if results and results.multi_hand_landmarks:
-                 # Serialize landmarks to simple list of dicts/arrays
-                 # For simplicity now, let's just send the gesture string
-                 # If we need visualization, we need coordinates.
-                 pass
+            # Old code converted it here. New code converts inside.
+            # So pass 'frame' directly.
             
             try:
-                # Sending: (frame_index, gesture, has_landmarks)
-                # To draw landmarks in main process, we would need to serialize them
-                # For now, let's just send the gesture to control recording.
+                gesture, landmarks = detector.detect_gesture(frame)
+                
+                # Send result
                 if gesture:
+                    # Currently Service expects just the string.
+                    # We will send just the string to preserve compatibility.
+                    # If we want to send landmarks later, we need to update Service.
                     self.result_queue.put(gesture, block=False)
-            except queue.Full:
-                pass
+            except Exception as e:
+                logger.error(f"Inference Error: {e}")
+                
+            last_processed_index = current_index
             
             last_processed_index = current_index
         

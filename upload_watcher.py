@@ -52,6 +52,12 @@ class UploadWatcher:
             if self._is_file_ready(file_path):
                 logger.info(f"Processing: {file_path}")
                 
+                # Local Mode Check
+                if not self.uploader.enabled:
+                    # Just enforce retention policy
+                    self.uploader._cleanup_local_storage()
+                    continue
+
                 # Try Upload
                 uploaded = self._try_upload_blocking(file_path)
                 

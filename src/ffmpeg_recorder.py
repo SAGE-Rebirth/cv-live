@@ -1,3 +1,7 @@
+"""
+DEPRECATED: This module is no longer used but preserved for reference.
+It contains the old FFmpeg subprocess based recorder.
+
 import subprocess
 import threading
 import queue
@@ -108,6 +112,7 @@ class FFmpegRecorder:
             if self.process and self.process.stdin:
                 try:
                     self.process.stdin.write(item.tobytes())
+                    self.process.stdin.flush() # Ensure data is sent immediately
                 except BrokenPipeError:
                     logger.error("FFmpeg Broken Pipe! Process died?")
                     self.process = None
@@ -126,6 +131,18 @@ class FFmpegRecorder:
         filename = f"rec_{timestamp}.mp4"
         self.current_file_path = os.path.join(self.output_dir, filename)
         
+        # Platform specific encoder
+        # Revert to robust software encoding (libx264)
+        # Hardware encoding (videotoolbox) was rejecting parameters.
+        # libx264 on M4 is plenty fast for 640x480.
+        encoder_args = [
+            '-c:v', 'libx264', 
+            '-preset', 'ultrafast', 
+            '-tune', 'zerolatency', # Critical for live streaming/recording
+            '-crf', '23', 
+            '-pix_fmt', 'yuv420p'
+        ]
+
         cmd = [
             'ffmpeg', '-y',
             '-f', 'rawvideo',
@@ -134,10 +151,7 @@ class FFmpegRecorder:
             '-pix_fmt', 'bgr24',
             '-r', str(self.fps),
             '-i', '-',
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '23',
-            '-pix_fmt', 'yuv420p',
+            *encoder_args,
             self.current_file_path
         ]
         
@@ -146,7 +160,7 @@ class FFmpegRecorder:
                 cmd, 
                 stdin=subprocess.PIPE, 
                 stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL
+                stderr=None  # Inherit stderr so it prints to console for debugging
             )
             logger.info(f"FFmpeg process started: {self.current_file_path}")
         except FileNotFoundError:
@@ -170,11 +184,10 @@ class FFmpegRecorder:
             self.current_file_path = None
 
     def _ensure_disk_space(self):
-        """
-        Ensures there is enough disk space. 
-        If disk usage > CONFIG.MAX_DISK_USAGE_PERCENT, deletes oldest recordings.
-        Returns True if space is available (or made available), False if critical failure.
-        """
+        # Ensures there is enough disk space. 
+        # If disk usage > CONFIG.MAX_DISK_USAGE_PERCENT, deletes oldest recordings.
+        # Returns True if space is available (or made available), False if critical failure.
+        
         try:
             while True:
                 total, used, free = shutil.disk_usage(self.output_dir)
@@ -203,3 +216,4 @@ class FFmpegRecorder:
         except Exception as e:
             logger.error(f"Error in disk space check: {e}")
             return False
+"""

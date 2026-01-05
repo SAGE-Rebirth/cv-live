@@ -8,7 +8,7 @@ Systemd is the standard initialization system for Linux distributions (like Rasp
 Using systemd allows us to:
 *   **Auto-Start**: Start the app automatically when the Pi boots.
 *   **Resilience**: Automatically restart the app if it crashes.
-*   **Logging**: Capture standard output (print statements) into system logs (`journalctl`).
+*   **Logging**: Capture standard output into system logs (`journalctl`) **and** internal file logs (`logs/app.log`).
 
 ## Project Services
 This application uses **two** distinct services to decouple critical functionality:

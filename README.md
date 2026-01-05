@@ -18,15 +18,15 @@
 - **Auto-Segmentation**: Longer recordings are automatically split into 5-minute segments.
 - **Optimized Storage**: Uses FFmpeg with H.264 compression (CRF) to reduce file sizes by ~90% compared to standard raw capture.
 - **Cloud Integration**: Automatically uploads completed segments to AWS S3 in the background.
-- **Resiliancy**:
+- **Resiliency**:
     - **Disk Watchdog**: Prevents recording if disk usage exceeds 85%.
-    - **Auto-Cleanup**: Deletes oldest local files to free space.
-    - **Retry Logic**: Retries failed uploads with exponential backoff.
+    - **Ring Buffer Storage**: Automatically deletes the oldest video file when disk is full, ensuring continuous operation.
+    - **Thermal Protection**: Monitors CPU temperature and automatically minimizes AI usage if the device overheats (>75°C).
+    - **Auto-Cleanup & Retry**: Quarantine logic for failed uploads.
 - **Web Dashboard**: View live feed and control the system from any browser on the network.
 - **Performance**:
-    - **Threaded Capture**: Zero-latency frame reading.
-    - **AI Frame Skipping**: Configurable detection rate to save CPU on Pi.
-    - **Threaded Recording**: Disk I/O never blocks the vision loop.
+    - **Multi-Processing Architecture**: Uses separate CPU cores for Camera Capture, AI Inference, and Video Recording to ensure smooth 30FPS performance.
+    - **Zero-Copy buffers**: specialized shared memory for max speed.
 
 ## Prerequisites
 - **Hardware**: Raspberry Pi 5 (Preferred) or Mac/PC with Webcam.
@@ -65,31 +65,68 @@
         brew install ffmpeg
         ```
 
-## Configuration
+## Configuration (Beginner Friendly Guide)
 
-1.  **Environment Variables**
-    Create a `.env` file in the project root by copying the example logic:
-    ```ini
-    # AWS S3 Settings
-    S3_BUCKET_NAME=my-cv-bucket-name
-    S3_REGION=us-east-1
-    # AWS_ACCESS_KEY_ID=... (Optional if using ~/.aws/credentials)
-    # AWS_SECRET_ACCESS_KEY=...
-    
-    # Camera Settings
-    CAMERA_INDEX=0
-    FRAME_WIDTH=640
-    FRAME_HEIGHT=480
-    FPS=30
-    
-    # Performance Tuning
-    DETECTION_RATE=5   # Run AI every 5th frame (Higher = Less CPU)
-    MODEL_COMPLEXITY=0 # 0 = Lite (Pi), 1 = Full (Mac)
-    
-    # Storage
-    RECORDING_SEGMENT_DURATION=300 # Seconds (5 mins)
-    MAX_DISK_USAGE_PERCENT=85
-    ```
+This project uses a `.env` file to manage all settings. This makes it easy to change settings without touching the code.
+
+### Step 1: Create the Config File
+In the project folder, create a new file named `.env`. You can do this by running:
+```bash
+nano .env
+```
+Then copy-paste the following configuration into it.
+
+### Step 2: The Configuration Variables
+Here is exactly what you need to put in that file.
+
+#### 1. AWS Cloud Settings (Required)
+These allow the system to upload videos to your cloud bucket.
+```ini
+S3_BUCKET_NAME=my-cv-bucket-name
+S3_REGION=us-east-1
+# If you have AWS CLI installed, you don't need the keys below.
+# If not, uncomment and add your IAM User keys:
+# AWS_ACCESS_KEY_ID=AKIA......
+# AWS_SECRET_ACCESS_KEY=SumSecreTKeY.....
+```
+
+#### 2. Camera Settings
+Adjust these if you use a different specific camera.
+```ini
+CAMERA_INDEX=0       # 0 is usually the default USB webcam or Pi Cam. Try 1 if 0 fails.
+FRAME_WIDTH=640      # Logical recording width.
+FRAME_HEIGHT=480     # Logical recording height.
+FPS=30               # Target Frames Per Second.
+```
+
+#### 3. Storage & Safety (Important)
+Control how files are saved and when to delete old ones.
+```ini
+RECORDINGS_DIR=recordings        # Folder where videos are saved locally.
+RECORDING_SEGMENT_DURATION=300   # (Seconds) Split video into new file every 5 mins.
+MAX_DISK_USAGE_PERCENT=85        # If Disk is > 85% full, delete oldest file.
+RETENTION_COUNT=100              # Keep max 100 files locally before deleting.
+```
+
+#### 4. Performance Tuning
+Tweak these if the system feels slow or hot.
+```ini
+# MODEL_COMPLEXITY:
+# Set to 0 for Raspberry Pi (Faster).
+# Set to 1 for Mac/PC (More Accurate).
+MODEL_COMPLEXITY=0
+
+# DETECTION_RATE:
+# Run AI check every N frames.
+# 1 = Check every frame (Max CPU usage).
+# 5 = Check every 5th frame (Recommended for Pi).
+DETECTION_RATE=5
+```
+
+#### 5. Debugging
+```ini
+LOG_LEVEL=INFO   # INFO is standard. Use DEBUG for more details.
+```
 
 ## Usage
 

@@ -40,7 +40,7 @@
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/yourusername/cv-live.git
+    git clone https://github.com/SAGE-Rebirth/cv-live.git
     cd cv-live
     ```
 

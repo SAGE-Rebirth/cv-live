@@ -27,6 +27,12 @@ Geometric heuristics are applied to the 21 normalized 3D landmarks:
 *   **Peace Sign (Start)**: Indices 8 (Index Tip) and 12 (Middle Tip) are significantly above their respective MCP knuckles, while others are curled.
 *   **Open Palm (Stop)**: Identifies if at least 4 fingers are fully extended (Tip Y < MCP Y).
 
+### Gesture Confirmation (Debouncing)
+To prevent accidental triggers, a "Confirmation Window" is implemented:
+1.  **Hold Required**: The user must hold the gesture for **2.0 seconds** (configurable).
+2.  **Visual Feedback**: The system calculates `progress = elapsed / required_time` and displays a percentage overlay (e.g., "STOP_RECORDING: 45%").
+3.  **Action**: The command executes only when progress reaches 100%. If the hand is dropped early, the timer resets.
+
 ### Performance & AI Throttling
 *   **Inference Speed**: On a Pi 5, MediaPipe takes ~30-50ms per frame.
 *   **Frame Skipping**: We do *not* run AI on every frame.
@@ -68,3 +74,10 @@ To bypass Python's **Global Interpreter Lock (GIL)**, we split the heavier tasks
 | **UploadWatcher** | S3 Uploads | Network / I/O |
 
 This ensures that a heavy AI calculation never causes the Web Interface or Video Feed to stutter.
+
+---
+
+## 5. Logging & Observability
+*   **Centralized Configuration**: Logging is configured in `main.py` to ensure all subprocesses and modules share the same handlers.
+*   **Dual Output**: Logs are written to both `stdout` (for systemd/journalctl) and `logs/app.log` (for persistent debugging).
+*   **Tracebacks**: Critical errors (like Inference failures) use `logger.exception` to capture full stack traces.

@@ -51,26 +51,17 @@ class InferenceProcess(multiprocessing.Process):
             # Process Frame
             frame = self.shared_state.get_frame() # Zero-copy read
             
-            # Convert for MediaPipe (BGR to RGB is handled inside detect_gesture now if needed, 
-            # actually prompt said to just call detect_gesture(frame). 
-            # But wait, my implementation of detect_gesture EXPECTS BGR and converts it. 
-            # Yes, lines 27-28 in new gesture.py: "Convert the BGR image to RGB".
-            # So we pass BGR frame directly.
-            
-            # Old code converted it here. New code converts inside.
-            # So pass 'frame' directly.
-            
+            if frame is None:
+                continue
+
             try:
                 gesture, landmarks = detector.detect_gesture(frame)
                 
                 # Send result
                 if gesture:
-                    # Currently Service expects just the string.
-                    # We will send just the string to preserve compatibility.
-                    # If we want to send landmarks later, we need to update Service.
                     self.result_queue.put(gesture, block=False)
-            except Exception as e:
-                logger.error(f"Inference Error: {e}")
+            except Exception:
+                logger.exception("Inference Error Detailed")
                 
             last_processed_index = current_index
             

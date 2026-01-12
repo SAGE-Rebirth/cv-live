@@ -63,15 +63,41 @@ class CameraService:
         """
         Reacts to the detected gesture string.
         """
+        # State for gesture debouncing/confirmation
+        if not hasattr(self, '_gesture_confirmation_start'):
+            self._gesture_confirmation_start = 0
+            self._last_pending_gesture = None
+        
+        CONFIRMATION_TIME = 10.0 # Seconds to hold gesture
+        
+        # 1. New Gesture Detection
+        if gesture != self._last_pending_gesture:
+            self._last_pending_gesture = gesture
+            self._gesture_confirmation_start = time.time()
+            return # Wait for confirmation
+            
+        # 2. Check Duration
+        elapsed = time.time() - self._gesture_confirmation_start
+        if elapsed < CONFIRMATION_TIME:
+            return # Still waiting
+            
+        # 3. Action (Only once per successful confirmation)
+        # We need a flag to ensure we don't spam the action while holding
+        if hasattr(self, '_last_confirmed_gesture') and self._last_confirmed_gesture == gesture:
+             return 
+
+        # Execute Action
         if gesture == "START_RECORDING":
             if not self.recorder.is_recording:
-                logger.info("Gesture Detected: START RECORDING (Peace Sign)")
+                logger.info(f"Gesture Confirmed ({elapsed:.1f}s): START RECORDING")
                 self.recorder.start_recording()
+                self._last_confirmed_gesture = gesture
         
         elif gesture == "STOP_RECORDING":
             if self.recorder.is_recording:
-                logger.info("Gesture Detected: STOP RECORDING (Open Palm)")
+                logger.info(f"Gesture Confirmed ({elapsed:.1f}s): STOP RECORDING")
                 self.recorder.stop_recording()
+                self._last_confirmed_gesture = gesture
 
     def start(self):
         if self.running:
@@ -131,6 +157,10 @@ class CameraService:
                     if gesture:
                         last_gesture = gesture
                         self._handle_gesture_logic(gesture)
+                    else:
+                        # Reset if hand lost/neutral
+                        self._last_pending_gesture = None
+                        self._last_confirmed_gesture = None
             except queue.Empty:
                 pass
             
@@ -141,8 +171,23 @@ class CameraService:
             # Visual Feedback
             cv2.putText(frame, f"REC: {self.recorder.is_recording}", (10, 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255) if self.recorder.is_recording else (0, 255, 0), 2)
+            
             if last_gesture:
-                cv2.putText(frame,f"Gesture: {last_gesture}",(10,60),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                # Show Progress if pending
+                if getattr(self, '_last_pending_gesture', None) == last_gesture:
+                    elapsed = time.time() - getattr(self, '_gesture_confirmation_start', 0)
+                    progress = min(elapsed / 2.0, 1.0) # 2.0 is hardcoded CONFIRMATION_TIME
+                    
+                    if progress < 1.0:
+                         color = (0, 165, 255) # Orange for waiting
+                         text = f"{last_gesture}: {int(progress*100)}%"
+                    else:
+                         color = (0, 255, 0) # Green for confirmed
+                         text = f"{last_gesture}: CONFIRMED"
+                         
+                    cv2.putText(frame, text,(10,60),cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                else:
+                    cv2.putText(frame,f"Gesture: {last_gesture}",(10,60),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
             # 5. Pipe to Recorder
             if self.recorder.is_recording:

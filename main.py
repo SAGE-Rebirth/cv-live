@@ -9,12 +9,25 @@ import shutil
 from dotenv import load_dotenv
 import logging
 
+from src.config import Config
+
 # Configure Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - [API] - %(levelname)s - %(message)s')
+if not os.path.exists(Config.LOGS_DIR):
+    os.makedirs(Config.LOGS_DIR)
+
+log_file = os.path.join(Config.LOGS_DIR, "app.log")
+
+logging.basicConfig(
+    level=getattr(logging, Config.LOG_LEVEL, logging.INFO), 
+    format='%(asctime)s - [API] - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(log_file)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 from src.service import CameraService
-from src.config import Config
 
 load_dotenv()
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "my-cv-bucket")

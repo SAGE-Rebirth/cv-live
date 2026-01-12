@@ -14,21 +14,6 @@ from src.processes.shared_state import SharedStateManager
 from src.processes.capture import CaptureProcess
 from src.processes.inference import InferenceProcess
 
-# Configure logging
-# Configure logging
-if not os.path.exists(Config.LOGS_DIR):
-    os.makedirs(Config.LOGS_DIR)
-
-log_file = os.path.join(Config.LOGS_DIR, "app.log")
-
-logging.basicConfig(
-    level=getattr(logging, Config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file)
-    ]
-)
 logger = logging.getLogger(__name__)
 
 class CameraService:

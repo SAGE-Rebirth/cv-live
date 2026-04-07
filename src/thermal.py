@@ -1,24 +1,27 @@
-import os
 import platform
 import logging
 
 logger = logging.getLogger(__name__)
 
-def get_cpu_temperature():
+# Cached after first call so non-Linux platforms don't re-stat the missing
+# sysfs path on every poll.
+_THERMAL_ZONE = "/sys/class/thermal/thermal_zone0/temp"
+_PLATFORM = platform.system()
+
+
+def get_cpu_temperature() -> float:
     """
-    Returns API temperature in Celsius.
-    Works on Raspberry Pi (Linux) and returns dummy on Mac.
+    Return CPU temperature in Celsius.
+
+    On Raspberry Pi / Linux this reads the standard thermal zone. On any
+    other platform (macOS dev machines, Windows) we return a safe constant
+    that will never trip the throttling threshold — there is no portable
+    way to read CPU temp without an external dependency.
     """
+    if _PLATFORM != "Linux":
+        return 45.0
     try:
-        if platform.system() == "Linux":
-            # Standard Raspberry Pi thermal zone
-            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                temp_str = f.read()
-                return int(temp_str) / 1000.0
-        elif platform.system() == "Darwin":
-            # Mac doesn't expose standard temp easily without external tools (osx-cpu-temp)
-            # returning safe dummy
-            return 45.0
-    except Exception:
-        pass
-    return 0.0
+        with open(_THERMAL_ZONE, "r") as f:
+            return int(f.read()) / 1000.0
+    except OSError:
+        return 0.0

@@ -7,3 +7,8 @@ fastapi
 uvicorn
 jinja2
 PyYAML
+pydantic
+pydantic-settings
+
+# Dev / test
+pytest

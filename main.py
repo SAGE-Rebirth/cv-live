@@ -1,30 +1,18 @@
-from fastapi import FastAPI, BackgroundTasks, Request
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import os
-import time
 import shutil
 from dotenv import load_dotenv
 import logging
 
 from src.config import Config
+from src.logging_setup import setup_logging
 
-# Configure Logging
-if not os.path.exists(Config.LOGS_DIR):
-    os.makedirs(Config.LOGS_DIR)
-
-log_file = os.path.join(Config.LOGS_DIR, "app.log")
-
-logging.basicConfig(
-    level=getattr(logging, Config.LOG_LEVEL, logging.INFO), 
-    format='%(asctime)s - [API] - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file)
-    ]
-)
+setup_logging("API")
 logger = logging.getLogger(__name__)
 
 from src.service import CameraService
@@ -48,26 +36,37 @@ tags_metadata = [
     },
 ]
 
+# Global Service (constructed at import; lifespan starts/stops it)
+camera_service = CameraService(bucket_name=BUCKET_NAME)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    camera_service.start()
+    try:
+        yield
+    finally:
+        camera_service.stop()
+
+
 app = FastAPI(
     title="CV Live System API",
     description="""
     Control interface for the Intelligent Gesture Camera System.
-    
+
     ## Features
     * **Start/Stop Recording**: Manual control overrides.
     * **Live Stream**: Low-latency MJPEG feed.
     * **Metrics**: Real-time disk and system health monitoring.
     """,
     version="1.0.0",
-    openapi_tags=tags_metadata
+    openapi_tags=tags_metadata,
+    lifespan=lifespan,
 )
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-# Global Service
-camera_service = CameraService(bucket_name=BUCKET_NAME)
 
 # --- Pydantic Models ---
 class StatusResponse(BaseModel):
@@ -81,15 +80,6 @@ class MetricsResponse(BaseModel):
     disk_usage_percent: float = Field(..., description="Percentage of disk space used.")
     disk_free_gb: float = Field(..., description="Free disk space in Gigabytes.")
     fps_configured: int = Field(..., description="Target FPS configuration.")
-
-# --- Lifecycle ---
-@app.on_event("startup")
-def startup_event():
-    camera_service.start()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    camera_service.stop()
 
 # --- Endpoints ---
 
@@ -157,34 +147,45 @@ class ConfigUpdate(BaseModel):
 def update_config(update: ConfigUpdate):
     """
     Update a dynamic setting (e.g. DETECTION_RATE).
-    Writes to settings.yaml.
+    Writes to settings.yaml. Validation is delegated to the pydantic
+    runtime-settings model.
     """
-    # Allowed keys verification
-    ALLOWED = ["DETECTION_RATE", "MODEL_COMPLEXITY", "RECORDING_SEGMENT_DURATION", 
-               "MAX_DISK_USAGE_PERCENT", "RETENTION_COUNT"]
-    
-    if update.key not in ALLOWED:
-        return JSONResponse(status_code=400, content={"error": f"Key {update.key} is not editable or invalid."})
-
     # Cast to int if it looks like one (YAML prefers ints)
     val = update.value
     if val.is_integer():
         val = int(val)
-        
-    Config.update_setting(update.key, val)
+
+    try:
+        Config.update_setting(update.key, val)
+    except (ValueError, Exception) as e:  # pydantic ValidationError subclasses Exception
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
     return {"status": "updated", "key": update.key, "value": val}
 
 def gen_frames():
-    """Generator for video streaming"""
-    while True:
-        with camera_service.lock:
+    """Generator for the MJPEG video stream.
+
+    Blocks on the service's frame_condition so we never spin and so each
+    viewer wakes within microseconds of a fresh frame. The generator exits
+    cleanly when the service stops or the client disconnects (StreamingResponse
+    swallows the GeneratorExit raised on disconnect).
+    """
+    last_sent = None
+    while camera_service.running:
+        with camera_service.frame_condition:
+            # Wait until a *new* frame is available (or 1s timeout to re-check shutdown)
+            camera_service.frame_condition.wait_for(
+                lambda: camera_service.current_frame is not last_sent
+                or not camera_service.running,
+                timeout=1.0,
+            )
             frame = camera_service.current_frame
-        
-        if frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        else:
-            time.sleep(0.1)
+
+        if frame is None or frame is last_sent:
+            continue
+        last_sent = frame
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.get("/video_feed", tags=["Stream"])
 def video_feed():

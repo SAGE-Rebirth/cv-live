@@ -5,24 +5,26 @@ import shutil
 import glob
 from src.storage import S3Uploader
 from src.config import Config
+from src.logging_setup import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [WATCHER] - %(levelname)s - %(message)s'
-)
+setup_logging("WATCHER")
 logger = logging.getLogger(__name__)
+
 
 class UploadWatcher:
     def __init__(self):
         self.uploader = S3Uploader(bucket_name=Config.S3_BUCKET_NAME)
         self.pending_dir = Config.RECORDINGS_DIR
-        self.quarantine_dir = os.path.join(self.pending_dir, "quarantine")
-        
-        if not os.path.exists(self.pending_dir):
-            os.makedirs(self.pending_dir)
-        if not os.path.exists(self.quarantine_dir):
-            os.makedirs(self.quarantine_dir)
-            
+        # Quarantine lives OUTSIDE the watched dir so non-recursive globbing
+        # never picks quarantined files back up for re-upload attempts.
+        self.quarantine_dir = os.path.join(
+            os.path.dirname(os.path.abspath(self.pending_dir)) or ".",
+            "quarantine",
+        )
+
+        os.makedirs(self.pending_dir, exist_ok=True)
+        os.makedirs(self.quarantine_dir, exist_ok=True)
+
         # Track attempts
         self.attempts = {}
 
@@ -45,10 +47,6 @@ class UploadWatcher:
             return
 
         for file_path in files:
-            # Skip if in quarantine already (glob doesn't recurse by default but just safe)
-            if "quarantine" in file_path:
-                continue
-
             if self._is_file_ready(file_path):
                 logger.info(f"Processing: {file_path}")
                 

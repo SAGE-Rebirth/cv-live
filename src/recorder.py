@@ -10,7 +10,18 @@ import glob
 logger = logging.getLogger(__name__)
 
 class VideoRecorder:
-    def __init__(self, output_dir=Config.RECORDINGS_DIR, width=Config.FRAME_WIDTH, height=Config.FRAME_HEIGHT, fps=Config.FPS, upload_callback=None):
+    """
+    Writes mp4 segments to disk. The standalone upload_watcher process is
+    responsible for uploading them — this class never touches S3.
+    """
+
+    def __init__(
+        self,
+        output_dir=Config.RECORDINGS_DIR,
+        width=Config.FRAME_WIDTH,
+        height=Config.FRAME_HEIGHT,
+        fps=Config.FPS,
+    ):
         self.output_dir = output_dir
         self.width = width
         self.height = height
@@ -18,11 +29,10 @@ class VideoRecorder:
         self.is_recording = False
         self.writer = None
         self.start_time = None
+        self.frame_count = 0
         self.current_file_path = None
-        self.upload_callback = upload_callback 
-        
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+
+        os.makedirs(self.output_dir, exist_ok=True)
 
     def start_recording(self):
         if self.is_recording:
@@ -80,59 +90,65 @@ class VideoRecorder:
         logger.info("Recording Stopped.")
 
     def _start_new_file(self):
+        # Re-check disk space at every rollover, not just at start_recording —
+        # a long session that crosses the threshold mid-stream would otherwise
+        # fill the disk until writes fail.
+        if not self._ensure_disk_space():
+            logger.error("Disk full at segment rollover; stopping recording.")
+            self.is_recording = False
+            self.writer = None
+            self.current_file_path = None
+            return
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"rec_{timestamp}.mp4"
         self.current_file_path = os.path.join(self.output_dir, filename)
-        
-        # Codec Selection Strategy
-        # Try AVC1 (H.264) -> MP4V (MPEG-4) -> MJPG (Motion JPEG)
-        codecs = ['avc1', 'mp4v', 'MJPG']
-        self.writer = None
-        
-        for codec in codecs:
-            try:
-                fourcc = cv2.VideoWriter_fourcc(*codec)
-                test_path = os.path.join(self.output_dir, f"test_{codec}.mp4")
-                
-                # Try initializing
-                # Note: OpenCV doesn't always throw error on init, needs write.
-                # But we'll trust the preference order.
-                self.writer = cv2.VideoWriter(self.current_file_path, fourcc, self.fps, (self.width, self.height))
-                
-                if self.writer.isOpened():
-                    logger.info(f"Initialized video writer with codec: {codec}")
-                    break
-            except Exception as e:
-                logger.warning(f"Failed to init codec {codec}: {e}")
-                continue
-                
-        if not self.writer or not self.writer.isOpened():
+
+        # Codec Selection Strategy: try AVC1 (H.264) -> MP4V -> MJPG.
+        # Open the real output path each time and keep the first writer that
+        # actually opens. Failed attempts are explicitly cleaned up so we
+        # never leave a zero-byte file behind for the upload watcher to find.
+        for codec in ('avc1', 'mp4v', 'MJPG'):
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            writer = cv2.VideoWriter(self.current_file_path, fourcc, self.fps, (self.width, self.height))
+            if writer.isOpened():
+                self.writer = writer
+                logger.info(f"Initialized video writer with codec: {codec}")
+                break
+            writer.release()
+            if os.path.exists(self.current_file_path):
+                try:
+                    os.remove(self.current_file_path)
+                except OSError:
+                    pass
+        else:
             logger.error("Failed to initialize any video writer codec.")
+            self.writer = None
             self.is_recording = False
+            self.current_file_path = None
             return
 
         self.start_time = time.time()
+        self.frame_count = 0
         logger.info(f"New segment started: {self.current_file_path}")
 
     def _close_file(self):
         if self.writer:
             self.writer.release()
             self.writer = None
-        
-        if self.current_file_path and os.path.exists(self.current_file_path):
-            if self.upload_callback:
-                self.upload_callback(self.current_file_path)
-        
+        # The upload_watcher process picks up finalised files from disk.
         self.current_file_path = None
 
     def write_frame(self, frame):
-        if not self.is_recording:
+        if not self.is_recording or self.writer is None:
             return
 
-        if self.writer:
-            self.writer.write(frame)
+        self.writer.write(frame)
+        self.frame_count += 1
 
-        if time.time() - self.start_time >= Config.RECORDING_SEGMENT_DURATION:
+        # Use frame count instead of time.time() for rollover — avoids a syscall
+        # in the hot path and keeps segments deterministic relative to FPS.
+        if self.frame_count >= self.fps * Config.RECORDING_SEGMENT_DURATION:
             logger.info("Segment duration reached. Rolling over.")
             self._close_file()
             self._start_new_file()

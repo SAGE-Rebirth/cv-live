@@ -6,36 +6,47 @@ from src.config import Config
 
 logger = logging.getLogger(__name__)
 
+SHM_NAME = "cv_live_frame"
+
+
 class SharedStateManager:
     def __init__(self, width=Config.FRAME_WIDTH, height=Config.FRAME_HEIGHT):
         self.width = width
         self.height = height
         self.frame_shape = (height, width, 3)
         self.frame_size = int(np.prod(self.frame_shape))
-        
-        # Shared Memory for 1 Frame (Double buffering would be better but keeping it simple for now)
-        # Actually, let's use a standard single buffer lock-protected or just accepted tearing for speed.
-        # Ideally: Ring buffer. But let's start with one atomic buffer.
-        
+
+        # Single shared-memory frame buffer. We use a deterministic name so a
+        # leaked segment from a previous crash can be unlinked and recreated.
         try:
-            self.shm = shared_memory.SharedMemory(create=True, size=self.frame_size)
+            self.shm = shared_memory.SharedMemory(
+                create=True, size=self.frame_size, name=SHM_NAME
+            )
         except FileExistsError:
-            # Clean up previous run mess
-            try:
-                temp = shared_memory.SharedMemory(name=None, size=self.frame_size)
-                temp.unlink()
-            except:
-                pass
-            self.shm = shared_memory.SharedMemory(create=True, size=self.frame_size)
+            logger.warning(
+                f"Shared memory '{SHM_NAME}' already exists (likely from a "
+                f"previous crash). Unlinking and recreating."
+            )
+            stale = shared_memory.SharedMemory(name=SHM_NAME)
+            stale.close()
+            stale.unlink()
+            self.shm = shared_memory.SharedMemory(
+                create=True, size=self.frame_size, name=SHM_NAME
+            )
 
         # Create numpy array backed by shared memory
         self.shared_frame = np.ndarray(self.frame_shape, dtype=np.uint8, buffer=self.shm.buf)
         
         # Coordination Flags
-        self.new_frame_event = multiprocessing.Event()
         self.running_flag = multiprocessing.Value('b', True)
         self.recording_flag = multiprocessing.Value('b', False)
         self.frame_index = multiprocessing.Value('L', 0) # Unsigned Long
+
+        # Per-consumer wakeup events. Each consumer (main loop, inference, ...)
+        # registers and gets its own Event so the producer can wake all of them
+        # without consumers stealing wakeups from each other. Must be registered
+        # BEFORE child processes are started (spawn pickles the manager).
+        self._consumer_events = []
 
     def refresh(self):
         """
@@ -47,19 +58,37 @@ class SharedStateManager:
         # We discard the copy and create a new view on the shared buffer.
         self.shared_frame = np.ndarray(self.frame_shape, dtype=np.uint8, buffer=self.shm.buf)
 
+    def register_consumer(self):
+        """
+        Allocate a wakeup Event for a new consumer. Call this from the main
+        process BEFORE spawning child processes that will wait on it.
+        """
+        evt = multiprocessing.Event()
+        self._consumer_events.append(evt)
+        return evt
+
     def get_frame(self):
-        """Read current frame from shared memory."""
-        # Note: This might read while writing happens (tearing), but for CV it's usually fine 
-        # vs the cost of locking.
+        """Read current frame from shared memory (returns a copy)."""
+        # Tearing is acceptable for CV throughput vs. the cost of locking.
         return self.shared_frame.copy()
 
+    def peek_frame(self):
+        """
+        Return a zero-copy view onto the shared buffer. The caller MUST NOT
+        mutate or hold this view across iterations — use this only for
+        read-only consumers (e.g. inference) that immediately hand the array
+        to a library that copies internally.
+        """
+        return self.shared_frame
+
     def write_frame(self, frame):
-        """Write frame to shared memory."""
+        """Write frame to shared memory and wake all registered consumers."""
         if frame.shape == self.frame_shape:
             self.shared_frame[:] = frame[:]
             with self.frame_index.get_lock():
                 self.frame_index.value += 1
-            self.new_frame_event.set()
+            for evt in self._consumer_events:
+                evt.set()
 
     def cleanup(self):
         """Release shared memory."""

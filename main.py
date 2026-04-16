@@ -87,6 +87,7 @@ templates = Jinja2Templates(directory="templates")
 # --- Pydantic Models ---
 class StatusResponse(BaseModel):
     recording: bool = Field(..., description="True if the system is currently recording video to disk.")
+    gesture_enabled: bool = Field(..., description="True if gesture control is active.")
 
 class ActionResponse(BaseModel):
     status: str = Field(..., description="Confirmation message of the action taken.")
@@ -124,7 +125,7 @@ def get_metrics():
         "recording": get_service().get_status()["recording"],
         "disk_usage_percent": round((used / total) * 100, 1),
         "disk_free_gb": round(free / (1024**3), 2),
-        "fps_configured": get_service().shared_state.actual_fps.value
+        "fps_configured": Config.FPS,
     }
 
 @app.post("/api/start", response_model=ActionResponse, tags=["Control"])
@@ -147,6 +148,18 @@ def stop_recording():
     logger.info("API: Received manual Stop request.")
     get_service().toggle_recording(False)
     return {"status": "stopped"}
+
+@app.post("/api/gesture-toggle", response_model=ActionResponse, tags=["Control"])
+def toggle_gesture():
+    """
+    Toggle gesture control on/off. When disabled, only manual buttons,
+    terminal commands, and API calls can start/stop recording.
+    """
+    svc = get_service()
+    svc.set_gesture_enabled(not svc.gesture_enabled)
+    state = "enabled" if svc.gesture_enabled else "disabled"
+    return {"status": f"gestures {state}"}
+
 
 @app.post("/api/quit", response_model=ActionResponse, tags=["Control"])
 def quit_server():
@@ -245,6 +258,7 @@ def _parse_args():
 Terminal commands (always available while the server is running):
   r   Start recording
   s   Stop recording
+  g   Toggle gesture control on/off
   q   Quit (clean shutdown)
 
 Examples:
@@ -288,6 +302,7 @@ def _terminal_loop(server_shutdown_event):
     print("\n--- CV Live Terminal Controls ---")
     print("  r = start recording")
     print("  s = stop recording")
+    print("  g = toggle gesture control")
     print("  q = quit")
     print("--------------------------------\n")
 
@@ -306,6 +321,11 @@ def _terminal_loop(server_shutdown_event):
             elif ch == "s":
                 get_service().toggle_recording(False)
                 print("[terminal] Recording STOPPED")
+            elif ch == "g":
+                svc = get_service()
+                svc.set_gesture_enabled(not svc.gesture_enabled)
+                state = "ON" if svc.gesture_enabled else "OFF"
+                print(f"[terminal] Gesture control {state}")
             elif ch == "q":
                 print("[terminal] Shutting down...")
                 server_shutdown_event.set()

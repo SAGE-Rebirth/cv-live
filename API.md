@@ -8,20 +8,21 @@
 ### Get Status
 `GET /api/status`
 
-Returns the current recording state of the system.
+Returns the current recording and gesture control state.
 
 **Response**
 `200 OK`
 ```json
 {
-  "recording": true
+  "recording": true,
+  "gesture_enabled": false
 }
 ```
 
 ### Get Metrics
 `GET /metrics`
 
-Returns detailed system telemetry for observability. `fps_configured` reflects the **actual** FPS the camera driver settled on (which may differ from the requested value).
+Returns detailed system telemetry for observability. `fps_configured` reflects the user's configured FPS from `settings.yaml`.
 
 **Response**
 `200 OK`
@@ -61,6 +62,19 @@ Manually stops the recording process and finalizes the current video segment. Eq
 ```json
 {
   "status": "stopped"
+}
+```
+
+### Toggle Gesture Control
+`POST /api/gesture-toggle`
+
+Toggles gesture control on/off. When disabled (the default), only manual buttons, terminal commands, and API calls can start/stop recording. The inference process pauses (zero CPU) when gestures are off.
+
+**Response**
+`200 OK`
+```json
+{
+  "status": "gestures enabled"
 }
 ```
 
@@ -177,6 +191,9 @@ curl -X POST http://localhost:8000/api/stop
 curl -X POST http://localhost:8000/api/config \
   -H "Content-Type: application/json" \
   -d '{"key": "FPS", "value": 30}'
+
+# Enable/disable gesture control
+curl -X POST http://localhost:8000/api/gesture-toggle
 
 # Shut down the app
 curl -X POST http://localhost:8000/api/quit

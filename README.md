@@ -5,7 +5,9 @@
 You can control it from a **web dashboard** in your browser, from the **terminal** (headless mode for Pi), or purely through **hand gestures**.
 
 > **Recently improved**
-> - **CLI with headless mode** — run `python3 main.py --headless` for terminal-only control on a Pi with no GUI. Press `r`/`s`/`q` to start, stop, or quit.
+> - **Gesture toggle** — gestures are **off by default** to prevent accidental recordings. Enable them from the dashboard switch, terminal (`g` key), or API. When off, the inference process sleeps (zero CPU from MediaPipe).
+> - **Gesture stability fix** — added hysteresis margin to finger detection so gestures don't flicker during transitions (peace ↔ palm).
+> - **CLI with headless mode** — run `python3 main.py --headless` for terminal-only control on a Pi with no GUI. Press `r`/`s`/`g`/`q` to start, stop, toggle gestures, or quit.
 > - **Quit button** in the dashboard header (power icon) — cleanly shuts down the server, camera, and all child processes.
 > - **H.264 (avc1) codec** — recordings now use H.264 instead of MPEG-4 Part 2, so they open in VS Code, QuickTime, VLC, and browsers.
 > - **Actual FPS tracking** — the recorder uses the real FPS reported by the camera driver, not the requested value. No more 2x-speed videos when the driver ignores your FPS request.
@@ -261,6 +263,7 @@ API docs:  http://localhost:8000/docs
 --- CV Live Terminal Controls ---
   r = start recording
   s = stop recording
+  g = toggle gesture control
   q = quit
 --------------------------------
 ```
@@ -289,15 +292,16 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### Stopping the app
 
-Three ways to quit:
+Terminal controls:
 
-| Method | Where |
+| Key | Action |
 |---|---|
-| **Power button** (top-right of dashboard) | Browser |
-| **`q` key** | Terminal |
-| **Ctrl+C** | Terminal |
+| `r` | Start recording |
+| `s` | Stop recording |
+| `g` | Toggle gesture control on/off |
+| `q` | Quit (clean shutdown) |
 
-All three trigger a clean shutdown: recording is stopped, child processes are joined, shared memory is released, and the camera is freed.
+You can also quit from the dashboard (power icon, top-right) or with **Ctrl+C**. All methods trigger a clean shutdown: recording is stopped, child processes are joined, shared memory is released, and the camera is freed.
 
 ---
 
@@ -316,8 +320,8 @@ You'll see:
   - **FPS dropdown** — pick `15`, `24`, `30`, or `60`. The camera reopens immediately. The recorder uses the **actual** FPS the driver reports, so playback speed is always correct even if the driver ignores your request.
   - **Resolution** — current capture resolution.
   - **Disk** — current disk usage percentage with a colored bar.
-  - **Gesture Guide** — quick reminder of the two gestures.
-- **Manual control buttons**: Start Recording / Stop Recording.
+  - **Gesture Control** — toggle switch to enable/disable gesture detection (off by default), plus a quick reminder of the two gestures. When off, the inference process sleeps and uses zero CPU.
+- **Manual control buttons**: Start Recording / Stop Recording (always work, regardless of gesture toggle).
 - **Settings button** (gear icon) — opens a modal with runtime-tunable settings.
 - **Quit button** (power icon) — shuts down the entire application with a confirmation dialog.
 
@@ -333,7 +337,9 @@ All dashboard changes are validated by the backend and persisted to `settings.ya
 
 ## Gestures
 
-When the camera sees your hand, it'll show a small overlay on the video feed with the gesture name and a progress bar.
+**Gesture control is disabled by default** to prevent accidental recordings. Enable it from the dashboard toggle switch, the terminal (`g` key), or the API (`POST /api/gesture-toggle`).
+
+When enabled and the camera sees your hand, it'll show a small overlay on the video feed with the gesture name and a progress bar.
 
 | Gesture | Action |
 |---|---|
@@ -431,6 +437,7 @@ The full Swagger UI is available at `http://<device-ip>:8000/docs` when the app 
 | `POST` | `/api/start` | Start recording manually |
 | `POST` | `/api/stop` | Stop recording manually |
 | `POST` | `/api/quit` | Gracefully shut down the app |
+| `POST` | `/api/gesture-toggle` | Toggle gesture control on/off |
 | `GET` | `/api/config` | All current settings |
 | `POST` | `/api/config` | Update one runtime setting |
 | `GET` | `/video_feed` | MJPEG live stream (use in `<img>` tags) |
@@ -455,6 +462,9 @@ curl -X POST http://localhost:8000/api/stop
 curl -X POST http://localhost:8000/api/config \
   -H "Content-Type: application/json" \
   -d '{"key": "DETECTION_RATE", "value": 3}'
+
+# Toggle gesture control on/off
+curl -X POST http://localhost:8000/api/gesture-toggle
 
 # Shut down the app remotely
 curl -X POST http://localhost:8000/api/quit

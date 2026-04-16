@@ -51,6 +51,9 @@ class SharedStateManager:
         # Shared detection rate so dashboard changes propagate to the
         # inference child without requiring it to re-read Config / YAML.
         self.target_detection_rate = multiprocessing.Value('i', int(Config.DETECTION_RATE))
+        # When False the inference process sleeps instead of running
+        # MediaPipe — zero CPU with no process terminate/respawn.
+        self.inference_enabled = multiprocessing.Value('b', False)
 
         # Per-consumer wakeup events. Each consumer (main loop, inference, ...)
         # registers and gets its own Event so the producer can wake all of them

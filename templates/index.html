@@ -147,21 +147,30 @@
 
                 <div class="stat-card gesture-help">
                     <div class="stat-card-header">
-                        <span class="stat-label">GESTURE GUIDE</span>
+                        <span class="stat-label">GESTURE CONTROL</span>
+                        <label class="toggle-switch" title="Enable/disable gesture control">
+                            <input type="checkbox" id="gesture-toggle" onchange="toggleGesture()">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <div class="gesture-row">
-                        <span class="gesture-emoji">✌️</span>
-                        <div class="gesture-info">
-                            <strong>Peace Sign</strong>
-                            <small>Start recording</small>
+                    <div id="gesture-guide-body" class="hidden">
+                        <div class="gesture-row">
+                            <span class="gesture-emoji">✌️</span>
+                            <div class="gesture-info">
+                                <strong>Peace Sign</strong>
+                                <small>Start recording</small>
+                            </div>
+                        </div>
+                        <div class="gesture-row">
+                            <span class="gesture-emoji">🖐️</span>
+                            <div class="gesture-info">
+                                <strong>Open Palm</strong>
+                                <small>Stop recording</small>
+                            </div>
                         </div>
                     </div>
-                    <div class="gesture-row">
-                        <span class="gesture-emoji">🖐️</span>
-                        <div class="gesture-info">
-                            <strong>Open Palm</strong>
-                            <small>Stop recording</small>
-                        </div>
+                    <div id="gesture-disabled-msg" class="gesture-disabled-msg">
+                        Gesture control is off. Use buttons or terminal.
                     </div>
                 </div>
             </aside>
@@ -244,8 +253,19 @@
         // ---- Status / metrics polling ----
         async function updateStatus() {
             try {
-                const res = await fetch('/metrics');
-                const data = await res.json();
+                const [metricsRes, statusRes] = await Promise.all([
+                    fetch('/metrics'),
+                    fetch('/api/status'),
+                ]);
+                const data = await metricsRes.json();
+                const status = await statusRes.json();
+
+                // Gesture toggle — sync UI with server state (may have
+                // been changed from terminal or another browser tab)
+                const gestureToggle = document.getElementById('gesture-toggle');
+                if (gestureToggle && document.activeElement !== gestureToggle) {
+                    syncGestureUI(status.gesture_enabled);
+                }
 
                 // Status badge
                 if (data.recording) {
@@ -312,6 +332,27 @@
                 console.error(e);
                 toast('Network error', 'error');
             }
+        }
+
+        // ---- Gesture toggle ----
+        async function toggleGesture() {
+            try {
+                const res = await fetch('/api/gesture-toggle', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const on = data.status.includes('enabled');
+                    syncGestureUI(on);
+                    toast(on ? 'Gesture control enabled' : 'Gesture control disabled', 'success');
+                }
+            } catch (e) {
+                toast('Network error', 'error');
+            }
+        }
+
+        function syncGestureUI(enabled) {
+            document.getElementById('gesture-toggle').checked = enabled;
+            document.getElementById('gesture-guide-body').classList.toggle('hidden', !enabled);
+            document.getElementById('gesture-disabled-msg').classList.toggle('hidden', enabled);
         }
 
         // ---- FPS dropdown ----

@@ -22,7 +22,10 @@ class InferenceProcess(multiprocessing.Process):
         setup_logging("INFER")
         self.shared_state.refresh() # Re-link shared memory
         logger.info("InferenceProcess Started.")
-        detector = GestureDetector()
+
+        # Defer MediaPipe init until gestures are actually enabled — avoids
+        # loading ~50 MB of native libraries while the user has gestures off.
+        detector = None
 
         last_processed_index = -1
         current_detection_rate = max(1, self.shared_state.target_detection_rate.value)
@@ -30,6 +33,19 @@ class InferenceProcess(multiprocessing.Process):
         last_sent_gesture = "__init__"  # sentinel: never matches a real value
 
         while self.shared_state.running_flag.value:
+            # When gesture control is disabled, sleep instead of processing.
+            # Zero CPU from MediaPipe. Check the flag every second.
+            if not self.shared_state.inference_enabled.value:
+                self.wakeup_event.wait(timeout=1.0)
+                self.wakeup_event.clear()
+                continue
+
+            # Lazy-init detector on first enabled tick
+            if detector is None:
+                logger.info("Initializing MediaPipe detector...")
+                detector = GestureDetector()
+                logger.info("MediaPipe detector ready.")
+
             # Block until producer signals a new frame (or 1s timeout for shutdown checks)
             self.wakeup_event.wait(timeout=1.0)
             self.wakeup_event.clear()

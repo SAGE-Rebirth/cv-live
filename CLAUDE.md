@@ -60,6 +60,7 @@ Three execution contexts run concurrently and communicate via `multiprocessing` 
    - Uses a 5-second timeout on `cap.read()` to prevent indefinite hangs on camera disconnect.
    - Publishes `actual_fps` to shared state after every camera open so the recorder uses the correct FPS for MP4 headers.
 3. **InferenceProcess** (`src/processes/inference.py`)
+   - Always started, but **sleeps** when `shared_state.inference_enabled` is False (gesture control off) — zero CPU. MediaPipe is lazy-loaded only on the first enabled tick.
    - Runs MediaPipe gesture detection on frames (with proper BGR→RGB conversion), sends gesture strings into `result_queue`.
    - Reads `target_detection_rate` from shared memory so dashboard changes apply immediately.
    - Throttles itself based on CPU temperature (`src/thermal.py`) — when temp > 75°C it doubles `DETECTION_RATE`.
@@ -96,6 +97,10 @@ Gesture debouncing lives in `GestureDebouncer` (`src/gesture.py`) — a plain cl
 The debouncer **must be fed every frame** (not just on queue events). It's a clock-driven state machine — without continuous ticks it can never observe that the hold time has elapsed. The main loop calls `self.debouncer.feed(last_gesture)` on every iteration, outside the queue drain loop.
 
 The inference process emits state-change events only — including transitions to `None` ("hand lost") — so the debouncer is always in sync without flooding the queue.
+
+**Gesture toggle**: `CameraService.gesture_enabled` (default `False`) controls whether gestures can trigger actions. When disabled, the inference process sleeps via `shared_state.inference_enabled` (zero CPU). Toggled via `POST /api/gesture-toggle`, the dashboard switch, or the terminal `g` key. `set_gesture_enabled()` flips the shared flag and resets the debouncer.
+
+**Hysteresis margin**: `classify_landmarks()` in `src/gesture.py` uses `_EXTEND_MARGIN = 0.03` — a finger must be at least 0.03 normalized units above its PIP joint to count as "extended". This prevents flickering during transitions (peace ↔ palm) when a fingertip hovers right at the threshold.
 
 ### Recording → upload pipeline
 

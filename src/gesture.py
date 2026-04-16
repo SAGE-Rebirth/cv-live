@@ -97,6 +97,14 @@ class GestureDebouncer:
             self._on_stop()
         self._last_confirmed = gesture
 
+# Hysteresis margin for finger extension detection (in normalized landmark
+# units). A finger must be at least this far above its PIP joint to count
+# as "extended", and at least this far below to count as "folded". This
+# prevents flickering when a fingertip hovers right at the threshold —
+# especially during transitions between gestures (peace ↔ palm).
+_EXTEND_MARGIN = 0.03
+
+
 def classify_landmarks(landmarks):
     """
     Classify a single hand's landmarks into a Gesture (or None).
@@ -109,8 +117,10 @@ def classify_landmarks(landmarks):
         return None
 
     def extended(tip_idx, pip_idx):
-        # In image-space y, tip "above" pip means tip.y < pip.y
-        return landmarks[tip_idx].y < landmarks[pip_idx].y
+        # In image-space y, tip "above" pip means tip.y < pip.y.
+        # Apply a margin so the finger must be clearly above (not just
+        # barely touching) to count as extended.
+        return landmarks[tip_idx].y < landmarks[pip_idx].y - _EXTEND_MARGIN
 
     index_ext = extended(*_FINGERS["index"])
     middle_ext = extended(*_FINGERS["middle"])

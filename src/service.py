@@ -59,6 +59,12 @@ class CameraService:
         self.frame_condition = threading.Condition()
         self.current_frame = None
 
+        # When False, gesture detection still runs (for the overlay) but the
+        # debouncer never fires actions. Manual buttons / terminal / API still
+        # work. Toggled via POST /api/gesture-toggle or the dashboard switch.
+        # Disabled by default to prevent accidental recordings.
+        self.gesture_enabled = False
+
     @property
     def lock(self):
         # Backwards-compat shim: code that used `with service.lock:` now uses
@@ -68,7 +74,8 @@ class CameraService:
     def get_status(self):
         """Returns the current status of the service."""
         return {
-            "recording": self.recorder.is_recording
+            "recording": self.recorder.is_recording,
+            "gesture_enabled": self.gesture_enabled,
         }
 
     def toggle_recording(self, state: bool):
@@ -127,14 +134,30 @@ class CameraService:
         logger.info("Starting Multi-Process Camera Service...")
         self.running = True
         self.shared_state.running_flag.value = True
+        # Sync the shared flag with our initial state
+        self.shared_state.inference_enabled.value = self.gesture_enabled
 
-        # Start Child Processes
+        # Start Child Processes — inference always starts but sleeps when
+        # gestures are disabled (controlled by shared inference_enabled flag).
         self.capture_process.start()
         self.inference_process.start()
 
         # Start Main Loop (in this process)
         self.processing_thread = threading.Thread(target=self._main_loop)
         self.processing_thread.start()
+
+    def set_gesture_enabled(self, enabled: bool):
+        """Toggle gesture control. Flips a shared flag that makes the
+        inference process sleep (zero CPU) or run MediaPipe."""
+        if enabled == self.gesture_enabled:
+            return
+        self.gesture_enabled = enabled
+        self.shared_state.inference_enabled.value = enabled
+        if enabled:
+            logger.info("Gesture control enabled.")
+        else:
+            self.debouncer.reset()
+            logger.info("Gesture control disabled — inference paused.")
 
     def _check_children(self):
         """Detect crashed child processes and respawn them.
@@ -229,6 +252,8 @@ class CameraService:
             # only on queue events. The debouncer is a clock-driven state
             # machine — without continuous ticks it can never observe that
             # the hold time has elapsed, and the gesture would never fire.
+            # When gesture control is disabled the inference process isn't
+            # running, so last_gesture stays None and the debouncer idles.
             self.debouncer.feed(last_gesture)
 
             self._draw_overlay(frame, last_gesture)

@@ -512,6 +512,60 @@ body {
 }
 
 /* ---- Gesture help card ---- */
+/* ---- Toggle switch ---- */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-medium);
+    border-radius: 28px;
+    transition: background 0.25s, border-color 0.25s;
+}
+
+.toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 22px;
+    width: 22px;
+    left: 2px;
+    bottom: 2px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.25s, background 0.25s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(24px);
+    background: white;
+}
+
+.gesture-disabled-msg {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 12px 0;
+}
+
 .gesture-help .stat-card-header {
     margin-bottom: 14px;
 }

@@ -1,4 +1,4 @@
-opencv-python
+opencv-contrib-python
 mediapipe
 boto3
 python-dotenv

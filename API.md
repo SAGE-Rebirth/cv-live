@@ -1,6 +1,6 @@
 # CV Live API Reference
 
-**Version**: 1.0.0  
+**Version**: 1.1.0  
 **Base URL**: `http://<device-ip>:8000`
 
 ## Monitoring
@@ -21,7 +21,7 @@ Returns the current recording state of the system.
 ### Get Metrics
 `GET /metrics`
 
-Returns detailed system telemetry for observability.
+Returns detailed system telemetry for observability. `fps_configured` reflects the **actual** FPS the camera driver settled on (which may differ from the requested value).
 
 **Response**
 `200 OK`
@@ -41,7 +41,7 @@ Returns detailed system telemetry for observability.
 ### Start Recording
 `POST /api/start`
 
-Manually triggers the recording process. Equivalent to the "Two Fingers" gesture.
+Manually triggers the recording process. Equivalent to holding the **Peace Sign** gesture for the configured hold time.
 
 **Response**
 `200 OK`
@@ -54,13 +54,26 @@ Manually triggers the recording process. Equivalent to the "Two Fingers" gesture
 ### Stop Recording
 `POST /api/stop`
 
-Manually stops the recording process and finalizes the video file for upload. Equivalent to the "Five Fingers" gesture.
+Manually stops the recording process and finalizes the current video segment. Equivalent to holding the **Open Palm** gesture.
 
 **Response**
 `200 OK`
 ```json
 {
   "status": "stopped"
+}
+```
+
+### Quit Application
+`POST /api/quit`
+
+Gracefully shuts down the entire application — stops recording, joins child processes, releases the camera and shared memory, then terminates the server. The response is sent before shutdown begins.
+
+**Response**
+`200 OK`
+```json
+{
+  "status": "shutting down"
 }
 ```
 
@@ -71,27 +84,35 @@ Manually stops the recording process and finalizes the video file for upload. Eq
 ### Get Configuration
 `GET /api/config`
 
-Returns all current configuration settings (Static from `.env` and Dynamic from `settings.yaml`).
+Returns all current configuration settings (Static from `.env` and Runtime from `settings.yaml`).
 
 **Response**
 `200 OK`
 ```json
 {
   "CAMERA_INDEX": 0,
+  "FRAME_WIDTH": 640,
+  "FRAME_HEIGHT": 480,
+  "S3_BUCKET_NAME": "",
+  "S3_REGION": "ap-south-1",
+  "UPLOAD_MAX_RETRIES": 3,
+  "LOG_LEVEL": "INFO",
+  "RECORDINGS_DIR": "recordings",
+  "LOGS_DIR": "logs",
   "DETECTION_RATE": 5,
-  "MODEL_COMPLEXITY": 1,
+  "MODEL_COMPLEXITY": 0,
   "RECORDING_SEGMENT_DURATION": 300,
   "MAX_DISK_USAGE_PERCENT": 85,
   "RETENTION_COUNT": 100,
-  "S3_BUCKET_NAME": "my-bucket",
-  "RECORDINGS_DIR": "recordings"
+  "FPS": 30,
+  "GESTURE_CONFIRMATION_SECONDS": 3.0
 }
 ```
 
 ### Update Configuration
 `POST /api/config`
 
-Updates a dynamic setting and persists it to `settings.yaml`.
+Updates a runtime setting and persists it to `settings.yaml`. Validation is performed by the pydantic model — invalid values return `400`.
 
 **Payload**
 ```json
@@ -101,7 +122,9 @@ Updates a dynamic setting and persists it to `settings.yaml`.
 }
 ```
 
-**Allowed Keys**: `DETECTION_RATE`, `MODEL_COMPLEXITY`, `RECORDING_SEGMENT_DURATION`, `MAX_DISK_USAGE_PERCENT`, `RETENTION_COUNT`.
+**Editable Keys**: `DETECTION_RATE`, `MODEL_COMPLEXITY`, `RECORDING_SEGMENT_DURATION`, `MAX_DISK_USAGE_PERCENT`, `RETENTION_COUNT`, `FPS`, `GESTURE_CONFIRMATION_SECONDS`.
+
+Changes to `FPS` reopen the camera at the new frame rate and roll the recorder to a fresh segment. Changes to `DETECTION_RATE` propagate to the inference process immediately via shared memory.
 
 **Response**
 `200 OK`
@@ -113,6 +136,14 @@ Updates a dynamic setting and persists it to `settings.yaml`.
 }
 ```
 
+**Error Response**
+`400 Bad Request`
+```json
+{
+  "error": "'FRAME_WIDTH' is not an editable runtime setting"
+}
+```
+
 ---
 
 ## Stream
@@ -120,9 +151,33 @@ Updates a dynamic setting and persists it to `settings.yaml`.
 ### Video Feed
 `GET /video_feed`
 
-Returns a standard Motion JPEG (MJPEG) stream. 
+Returns a standard Motion JPEG (MJPEG) stream, throttled to the camera FPS (capped at 25 FPS).
+
 **Usage**: Embed in an HTML `<img>` tag.
 
 ```html
 <img src="http://localhost:8000/video_feed" />
+```
+
+---
+
+## Quick Examples (curl)
+
+```bash
+# Check status
+curl http://localhost:8000/api/status
+
+# Start recording
+curl -X POST http://localhost:8000/api/start
+
+# Stop recording
+curl -X POST http://localhost:8000/api/stop
+
+# Change FPS live
+curl -X POST http://localhost:8000/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"key": "FPS", "value": 30}'
+
+# Shut down the app
+curl -X POST http://localhost:8000/api/quit
 ```

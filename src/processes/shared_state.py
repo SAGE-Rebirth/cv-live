@@ -41,6 +41,16 @@ class SharedStateManager:
         self.running_flag = multiprocessing.Value('b', True)
         self.recording_flag = multiprocessing.Value('b', False)
         self.frame_index = multiprocessing.Value('L', 0) # Unsigned Long
+        # Live-tunable camera FPS. The capture process polls this and
+        # reopens the camera when it changes. Initialized from Config.
+        self.target_fps = multiprocessing.Value('i', int(Config.FPS))
+        # Actual FPS reported by the camera driver after opening. The
+        # recorder must use THIS value (not target_fps) for the MP4 header,
+        # otherwise playback speed is wrong when the driver ignores our request.
+        self.actual_fps = multiprocessing.Value('i', int(Config.FPS))
+        # Shared detection rate so dashboard changes propagate to the
+        # inference child without requiring it to re-read Config / YAML.
+        self.target_detection_rate = multiprocessing.Value('i', int(Config.DETECTION_RATE))
 
         # Per-consumer wakeup events. Each consumer (main loop, inference, ...)
         # registers and gets its own Event so the producer can wake all of them
@@ -83,12 +93,17 @@ class SharedStateManager:
 
     def write_frame(self, frame):
         """Write frame to shared memory and wake all registered consumers."""
-        if frame.shape == self.frame_shape:
-            self.shared_frame[:] = frame[:]
-            with self.frame_index.get_lock():
-                self.frame_index.value += 1
-            for evt in self._consumer_events:
-                evt.set()
+        if frame.shape != self.frame_shape:
+            logger.warning(
+                f"Frame shape mismatch: got {frame.shape}, expected {self.frame_shape}. "
+                f"Frame dropped."
+            )
+            return
+        self.shared_frame[:] = frame[:]
+        with self.frame_index.get_lock():
+            self.frame_index.value += 1
+        for evt in self._consumer_events:
+            evt.set()
 
     def cleanup(self):
         """Release shared memory."""

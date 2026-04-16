@@ -150,7 +150,9 @@ class GestureDetector:
 
     def detect_gesture(self, image):
         """Process a BGR frame; return (gesture_or_None, landmarks)."""
-        rgb_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=image)
+        import cv2
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        rgb_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
 
         # MediaPipe VIDEO mode requires *strictly* increasing timestamps.
         # Use a monotonic clock and bump forward on collision so NTP/DST

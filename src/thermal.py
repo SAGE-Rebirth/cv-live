@@ -23,5 +23,7 @@ def get_cpu_temperature() -> float:
     try:
         with open(_THERMAL_ZONE, "r") as f:
             return int(f.read()) / 1000.0
-    except OSError:
-        return 0.0
+    except (OSError, ValueError):
+        # If we can't read the sensor, assume hot — better to throttle
+        # unnecessarily than to run full speed on an overheating Pi.
+        return 80.0

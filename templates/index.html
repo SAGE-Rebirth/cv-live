@@ -4,148 +4,410 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CV Live Dashboard</title>
+    <title>CV Live — Gesture Camera</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
+    <div class="background-glow"></div>
+
     <div class="container">
-        <header>
-            <div class="header-left">
-                <h1>CV Live</h1>
-                <div id="status-badge" class="badge">Checking...</div>
+        <!-- ============ HEADER ============ -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-mark">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 7l-7 5 7 5V7z"></path>
+                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>CV Live</h1>
+                    <span class="brand-tagline">Gesture-Controlled Recorder</span>
+                </div>
             </div>
-            <button id="btn-settings" onclick="openSettings()">⚙️ Settings</button>
+
+            <div class="header-actions">
+                <div id="status-badge" class="badge idle">
+                    <span class="badge-dot"></span>
+                    <span class="badge-text">CHECKING…</span>
+                </div>
+                <button id="btn-settings" class="icon-btn" onclick="openSettings()" title="Settings">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+                        </path>
+                    </svg>
+                </button>
+                <button id="btn-quit" class="icon-btn quit-btn" onclick="quitApp()" title="Quit Application">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                        <line x1="12" y1="2" x2="12" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
         </header>
 
-        <!-- Telemetry Bar -->
-        <div class="telemetry-bar">
-            <div class="stat"><span>FPS:</span> <span id="stat-fps">--</span></div>
-            <div class="stat"><span>Res:</span> <span id="stat-res">--</span></div>
-            <div class="stat"><span>Disk:</span> <span id="stat-disk">--%</span></div>
-        </div>
+        <!-- ============ MAIN GRID ============ -->
+        <main class="main-grid">
+            <!-- Video card -->
+            <section class="video-card">
+                <div class="video-card-header">
+                    <span class="video-label">
+                        <span class="live-dot"></span>
+                        LIVE FEED
+                    </span>
+                    <span id="rec-timer" class="rec-timer hidden">●  00:00</span>
+                </div>
+                <div class="video-container">
+                    <img src="/video_feed" alt="Live Stream" class="video-feed">
+                    <div class="video-overlay-gradient"></div>
+                </div>
+                <div class="controls">
+                    <button id="btn-start" class="action-btn primary" onclick="sendCommand('start')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+                        </svg>
+                        Start Recording
+                    </button>
+                    <button id="btn-stop" class="action-btn secondary" onclick="sendCommand('stop')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+                        </svg>
+                        Stop Recording
+                    </button>
+                </div>
+            </section>
 
-        <main>
-            <div class="video-container">
-                <img src="/video_feed" alt="Live Stream" class="video-feed">
-            </div>
+            <!-- Stats column -->
+            <aside class="stats-column">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <span class="stat-label">FRAME RATE</span>
+                        <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline>
+                        </svg>
+                    </div>
+                    <div class="stat-value-row">
+                        <select id="sel-fps" class="fps-select" onchange="changeFps(this.value)">
+                            <option value="15">15</option>
+                            <option value="24">24</option>
+                            <option value="30">30</option>
+                            <option value="60">60</option>
+                        </select>
+                        <span class="stat-unit">fps</span>
+                    </div>
+                </div>
 
-            <div class="controls">
-                <button id="btn-start" onclick="sendCommand('start')">Start Recording</button>
-                <button id="btn-stop" onclick="sendCommand('stop')">Stop Recording</button>
-            </div>
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <span class="stat-label">RESOLUTION</span>
+                        <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                    </div>
+                    <div class="stat-value-row">
+                        <span id="stat-res" class="stat-value">—</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <span class="stat-label">DISK USAGE</span>
+                        <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                        </svg>
+                    </div>
+                    <div class="stat-value-row">
+                        <span id="stat-disk" class="stat-value">—</span>
+                        <span class="stat-unit">%</span>
+                    </div>
+                    <div class="stat-bar">
+                        <div id="stat-disk-bar" class="stat-bar-fill" style="width:0%"></div>
+                    </div>
+                    <div class="stat-sub" id="stat-disk-free">— GB free</div>
+                </div>
+
+                <div class="stat-card gesture-help">
+                    <div class="stat-card-header">
+                        <span class="stat-label">GESTURE GUIDE</span>
+                    </div>
+                    <div class="gesture-row">
+                        <span class="gesture-emoji">✌️</span>
+                        <div class="gesture-info">
+                            <strong>Peace Sign</strong>
+                            <small>Start recording</small>
+                        </div>
+                    </div>
+                    <div class="gesture-row">
+                        <span class="gesture-emoji">🖐️</span>
+                        <div class="gesture-info">
+                            <strong>Open Palm</strong>
+                            <small>Stop recording</small>
+                        </div>
+                    </div>
+                </div>
+            </aside>
         </main>
+
+        <footer class="app-footer">
+            <span>CV Live · Multi-process pipeline</span>
+            <span class="footer-dot">·</span>
+            <a href="/docs" target="_blank" rel="noopener">API Docs</a>
+        </footer>
     </div>
 
-    <!-- Settings Modal -->
+    <!-- ============ SETTINGS MODAL ============ -->
     <div id="settings-modal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeSettings()">&times;</span>
-            <h2>Configuration</h2>
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn" onclick="closeSettings()" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
 
             <div class="form-group">
-                <label>AI Detection Rate (Every N frames)</label>
+                <label>AI Detection Rate</label>
                 <input type="number" id="inp-detection-rate" min="1" max="30">
-                <small>Higher = Less CPU usage. 1 = Every frame.</small>
+                <small>Run detection every N frames. Higher = less CPU.</small>
             </div>
 
             <div class="form-group">
                 <label>Max Disk Usage (%)</label>
                 <input type="number" id="inp-disk-limit" min="10" max="99">
+                <small>Oldest recordings get deleted above this percentage.</small>
             </div>
 
             <div class="form-group">
-                <label>Segment Duration (Seconds)</label>
+                <label>Segment Duration (seconds)</label>
                 <input type="number" id="inp-duration" min="60" max="3600">
+                <small>How long each .mp4 chunk is.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Gesture Hold Time (seconds)</label>
+                <input type="number" id="inp-confirm" min="0.5" max="30" step="0.5">
+                <small>How long to hold a gesture before it triggers.</small>
             </div>
 
             <div class="form-actions">
-                <button onclick="saveSettings()">Save Changes</button>
+                <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
+                <button class="btn-primary" onclick="saveSettings()">Save Changes</button>
             </div>
         </div>
     </div>
 
+    <!-- ============ TOAST CONTAINER ============ -->
+    <div id="toast-container" class="toast-container"></div>
+
     <script>
         const statusBadge = document.getElementById('status-badge');
+        const recTimer = document.getElementById('rec-timer');
+        let recordingStartedAt = null;
+        let lastRecording = false;
 
+        // ---- Toast helper (replaces alert()) ----
+        function toast(message, type = "info") {
+            const el = document.createElement('div');
+            el.className = `toast toast-${type}`;
+            el.textContent = message;
+            document.getElementById('toast-container').appendChild(el);
+            requestAnimationFrame(() => el.classList.add('show'));
+            setTimeout(() => {
+                el.classList.remove('show');
+                setTimeout(() => el.remove(), 300);
+            }, 3200);
+        }
+
+        // ---- Status / metrics polling ----
         async function updateStatus() {
             try {
-                // Get Metrics
                 const res = await fetch('/metrics');
                 const data = await res.json();
 
-                // Update Status Badge
+                // Status badge
                 if (data.recording) {
-                    statusBadge.textContent = 'RECORDING';
-                    statusBadge.className = 'badge recording';
+                    statusBadge.classList.remove('idle');
+                    statusBadge.classList.add('recording');
+                    statusBadge.querySelector('.badge-text').textContent = 'RECORDING';
+                    if (!lastRecording) {
+                        recordingStartedAt = Date.now();
+                        recTimer.classList.remove('hidden');
+                    }
                 } else {
-                    statusBadge.textContent = 'IDLE';
-                    statusBadge.className = 'badge idle';
+                    statusBadge.classList.remove('recording');
+                    statusBadge.classList.add('idle');
+                    statusBadge.querySelector('.badge-text').textContent = 'IDLE';
+                    recordingStartedAt = null;
+                    recTimer.classList.add('hidden');
+                }
+                lastRecording = data.recording;
+
+                // FPS dropdown — keep in sync but don't fight the user mid-edit
+                const fpsSelect = document.getElementById('sel-fps');
+                if (fpsSelect && document.activeElement !== fpsSelect) {
+                    fpsSelect.value = String(data.fps_configured);
                 }
 
-                // Update Telemetry Bar
-                document.getElementById('stat-fps').textContent = data.fps_configured;
-                document.getElementById('stat-res').textContent = "640x480"; // Ideally fetching config
-                document.getElementById('stat-disk').textContent = data.disk_usage_percent + '%';
+                // Resolution
+                document.getElementById('stat-res').textContent = "640 × 480";
+
+                // Disk usage card
+                const disk = data.disk_usage_percent;
+                document.getElementById('stat-disk').textContent = disk.toFixed(0);
+                const bar = document.getElementById('stat-disk-bar');
+                bar.style.width = Math.min(disk, 100) + '%';
+                bar.classList.toggle('warn', disk > 70);
+                bar.classList.toggle('danger', disk > 85);
+                document.getElementById('stat-disk-free').textContent = data.disk_free_gb.toFixed(1) + ' GB free';
 
             } catch (e) {
                 console.error(e);
             }
         }
 
+        // ---- Recording timer tick ----
+        function tickTimer() {
+            if (!recordingStartedAt) return;
+            const elapsed = Math.floor((Date.now() - recordingStartedAt) / 1000);
+            const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const s = String(elapsed % 60).padStart(2, '0');
+            recTimer.textContent = `●  ${m}:${s}`;
+        }
+        setInterval(tickTimer, 500);
+
+        // ---- Manual control ----
         async function sendCommand(cmd) {
             try {
-                await fetch(`/api/${cmd}`, { method: 'POST' });
-                setTimeout(updateStatus, 500);
+                const res = await fetch(`/api/${cmd}`, { method: 'POST' });
+                if (res.ok) {
+                    toast(cmd === 'start' ? 'Recording started' : 'Recording stopped', 'success');
+                } else {
+                    toast(`Failed to ${cmd}`, 'error');
+                }
+                setTimeout(updateStatus, 200);
             } catch (e) {
                 console.error(e);
+                toast('Network error', 'error');
             }
         }
 
-        // --- Settings Modal Logic ---
+        // ---- FPS dropdown ----
+        async function changeFps(value) {
+            try {
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: 'FPS', value: Number(value) }),
+                });
+                if (res.ok) {
+                    toast(`Camera reopened at ${value} FPS`, 'success');
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    toast('Failed to set FPS: ' + (err.error || res.statusText), 'error');
+                }
+                setTimeout(updateStatus, 300);
+            } catch (e) {
+                console.error(e);
+                toast('Network error', 'error');
+            }
+        }
+
+        // ---- Settings modal ----
         const modal = document.getElementById("settings-modal");
 
         async function openSettings() {
-            modal.style.display = "block";
-            // Fetch current config
+            modal.classList.add('open');
             const res = await fetch('/api/config');
             const cfg = await res.json();
 
-            document.getElementById('inp-detection-rate').value = cfg.DETECTION_RATE || 5;
-            document.getElementById('inp-disk-limit').value = cfg.MAX_DISK_USAGE_PERCENT || 85;
-            document.getElementById('inp-duration').value = cfg.RECORDING_SEGMENT_DURATION || 300;
+            document.getElementById('inp-detection-rate').value = cfg.DETECTION_RATE ?? 5;
+            document.getElementById('inp-disk-limit').value = cfg.MAX_DISK_USAGE_PERCENT ?? 85;
+            document.getElementById('inp-duration').value = cfg.RECORDING_SEGMENT_DURATION ?? 300;
+            document.getElementById('inp-confirm').value = cfg.GESTURE_CONFIRMATION_SECONDS ?? 3;
         }
 
         function closeSettings() {
-            modal.style.display = "none";
+            modal.classList.remove('open');
         }
 
         async function saveSettings() {
             const updates = [
                 { key: "DETECTION_RATE", value: Number(document.getElementById('inp-detection-rate').value) },
                 { key: "MAX_DISK_USAGE_PERCENT", value: Number(document.getElementById('inp-disk-limit').value) },
-                { key: "RECORDING_SEGMENT_DURATION", value: Number(document.getElementById('inp-duration').value) }
+                { key: "RECORDING_SEGMENT_DURATION", value: Number(document.getElementById('inp-duration').value) },
+                { key: "GESTURE_CONFIRMATION_SECONDS", value: Number(document.getElementById('inp-confirm').value) }
             ];
 
+            const errors = [];
             for (let u of updates) {
-                await fetch('/api/config', {
+                const res = await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(u)
                 });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    errors.push(`${u.key}: ${err.error || res.statusText}`);
+                }
             }
-            alert("Settings Saved!");
+            if (errors.length) {
+                toast('Some settings failed', 'error');
+                console.error(errors);
+            } else {
+                toast('Settings saved', 'success');
+            }
             closeSettings();
         }
 
         window.onclick = function (event) {
-            if (event.target == modal) {
-                closeSettings();
+            if (event.target == modal) closeSettings();
+        }
+
+        // ---- Quit application ----
+        async function quitApp() {
+            if (!confirm('Shut down CV Live? This will stop the server and all processes.')) return;
+            try {
+                const res = await fetch('/api/quit', { method: 'POST' });
+                if (res.ok) {
+                    toast('Shutting down...', 'info');
+                    // Disable polling — the server is going away
+                    clearInterval(pollInterval);
+                    statusBadge.querySelector('.badge-text').textContent = 'OFFLINE';
+                    statusBadge.classList.remove('recording');
+                    statusBadge.classList.add('idle');
+                } else {
+                    toast('Shutdown failed', 'error');
+                }
+            } catch (e) {
+                toast('Server unreachable', 'error');
             }
         }
 
-        // Poll status every 2 seconds
-        setInterval(updateStatus, 2000);
+        // Boot
+        const pollInterval = setInterval(updateStatus, 1500);
         updateStatus();
     </script>
 </body>

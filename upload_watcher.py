@@ -1,5 +1,6 @@
 import time
 import os
+import signal
 import logging
 import shutil
 import glob
@@ -9,6 +10,13 @@ from src.logging_setup import setup_logging
 
 setup_logging("WATCHER")
 logger = logging.getLogger(__name__)
+
+def _sigterm_handler(signum, frame):
+    """Convert SIGTERM (sent by systemd on stop) into KeyboardInterrupt
+    so the run-loop's existing except clause handles graceful shutdown."""
+    raise KeyboardInterrupt
+
+signal.signal(signal.SIGTERM, _sigterm_handler)
 
 
 class UploadWatcher:

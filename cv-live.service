@@ -1,18 +1,45 @@
 [Unit]
-Description=CV Live Camera Service
-After=network.target video.target
+Description=CV Live Camera Service (gesture-controlled recorder + web dashboard)
+Documentation=https://github.com/SAGE-Rebirth/cv-live
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-# CHANGE THESE PATHS TO MATCH YOUR PI SETUP
+Type=simple
+
+# === CHANGE THESE TO MATCH YOUR INSTALL ===
+# `User` must own the project directory and be in the `video` group on Linux.
 User=pi
+Group=pi
 WorkingDirectory=/home/pi/cv-live
+# Path to the venv created during installation. The README uses `.venv`.
 ExecStart=/home/pi/cv-live/venv/bin/python main.py
+
+# === Crash resilience ===
 Restart=always
 RestartSec=5
-# Resource Limits (Hardening)
+# Send SIGINT (not SIGTERM) so uvicorn / the recorder can flush the
+# current mp4 segment cleanly via KeyboardInterrupt before exiting.
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+# === Resource limits (hardening) ===
+# Adjust to fit your hardware. These are tuned for a Raspberry Pi 5 (8GB).
 MemoryMax=500M
 CPUQuota=350%
+
+# === Logging ===
+# PYTHONUNBUFFERED ensures log lines hit journalctl in real time.
 Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# === Security hardening (optional but recommended) ===
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# Explicitly allow writes to the recordings + logs dirs only.
+ReadWritePaths=/home/pi/cv-live/recordings /home/pi/cv-live/logs
 
 [Install]
 WantedBy=multi-user.target

@@ -2,7 +2,17 @@
 
 **CV Live** is a smart camera recorder that watches your hand gestures and starts/stops video recording on its own. It's designed to run continuously on a Raspberry Pi 5 (or any Mac/PC with a webcam) and can optionally upload finished recordings to AWS S3 — but it works perfectly fine without any cloud setup at all.
 
-You can also control it from a web dashboard in your browser, on the same Wi-Fi network as the device.
+You can control it from a **web dashboard** in your browser, from the **terminal** (headless mode for Pi), or purely through **hand gestures**.
+
+> **Recently improved**
+> - **CLI with headless mode** — run `python3 main.py --headless` for terminal-only control on a Pi with no GUI. Press `r`/`s`/`q` to start, stop, or quit.
+> - **Quit button** in the dashboard header (power icon) — cleanly shuts down the server, camera, and all child processes.
+> - **H.264 (avc1) codec** — recordings now use H.264 instead of MPEG-4 Part 2, so they open in VS Code, QuickTime, VLC, and browsers.
+> - **Actual FPS tracking** — the recorder uses the real FPS reported by the camera driver, not the requested value. No more 2x-speed videos when the driver ignores your FPS request.
+> - **Child process auto-recovery** — if the capture or inference process crashes, the main loop detects it within 5 seconds and respawns it automatically.
+> - **Live FPS dropdown** in the dashboard (15 / 24 / 30 / 60) — changes apply instantly without restarting.
+> - **Faster gesture response** — default hold time is now **3 seconds** (was 10s), and it's tunable from the Settings panel.
+> - **BGR-to-RGB fix** — gesture detection is now reliable (MediaPipe was receiving BGR data labeled as RGB, causing intermittent hand tracking failures).
 
 ---
 
@@ -16,14 +26,15 @@ You can also control it from a web dashboard in your browser, on the same Wi-Fi 
 6. [Running the App](#running-the-app)
 7. [Using the Web Dashboard](#using-the-web-dashboard)
 8. [Gestures](#gestures)
-9. [Local Mode vs Cloud Mode](#local-mode-vs-cloud-mode)
-10. [API Reference](#api-reference)
-11. [Running on a Raspberry Pi (Auto-Start)](#running-on-a-raspberry-pi-auto-start)
-12. [Project Structure](#project-structure)
-13. [Architecture & Performance](#architecture--performance)
-14. [Running the Tests](#running-the-tests)
-15. [Troubleshooting](#troubleshooting)
-16. [Tips, Dos & Don'ts](#tips-dos--donts)
+9. [Tuning Performance & Responsiveness](#tuning-performance--responsiveness)
+10. [Local Mode vs Cloud Mode](#local-mode-vs-cloud-mode)
+11. [API Reference](#api-reference)
+12. [Running on a Raspberry Pi (Auto-Start)](#running-on-a-raspberry-pi-auto-start)
+13. [Project Structure](#project-structure)
+14. [Architecture & Performance](#architecture--performance)
+15. [Running the Tests](#running-the-tests)
+16. [Troubleshooting](#troubleshooting)
+17. [Tips, Dos & Don'ts](#tips-dos--donts)
 
 ---
 
@@ -33,11 +44,12 @@ You can also control it from a web dashboard in your browser, on the same Wi-Fi 
 - **Detects two hand gestures**:
   - ✌️ **Peace sign** (index + middle finger up) → starts recording
   - 🖐️ **Open palm** (all five fingers up) → stops recording
-- **Records video** to your local disk as `.mp4` files, automatically split into 5-minute chunks.
+- **Records video** to your local disk as `.mp4` files (H.264 codec), automatically split into 5-minute chunks.
 - **Uploads each chunk to AWS S3** in the background, *if* you give it AWS credentials. If you don't, it just keeps the files locally.
 - **Manages disk space** automatically — when the disk gets full, it deletes the oldest recording first so it can keep going forever without manual intervention.
 - **Provides a web dashboard** so you can watch the live feed and tweak settings from any phone or computer on the network.
-- **Survives crashes** — the recorder and the uploader run as two separate background services, so a problem in one doesn't take down the other.
+- **Works headless** — run with `--headless` for terminal-only control on a Raspberry Pi with no display.
+- **Survives crashes** — the recorder and the uploader run as two separate background services, and crashed child processes are automatically respawned.
 
 ---
 
@@ -46,7 +58,7 @@ You can also control it from a web dashboard in your browser, on the same Wi-Fi 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │  Camera      │───▶│  Hand AI     │───▶│  Debouncer   │
-│  (capture)   │    │  (inference) │    │  (10s hold)  │
+│  (capture)   │    │  (inference) │    │  (3s hold)   │
 └──────┬───────┘    └──────────────┘    └──────┬───────┘
        │                                        │
        ▼                                        ▼
@@ -81,8 +93,10 @@ The system uses **three CPU cores in parallel** so the camera, the AI, and the r
 
 ### What you DON'T need
 - ❌ AWS credentials — the system runs in local-only mode if you skip them
-- ❌ FFmpeg — the recorder uses OpenCV's built-in video writer
+- ❌ A separate FFmpeg install — `opencv-contrib-python` (in `requirements.txt`) ships with the codecs the recorder needs
 - ❌ A GPU — MediaPipe runs on the CPU
+
+> **macOS users**: if you previously installed `opencv-python` (without `-contrib`), recordings may save as 0-byte files because the standard wheel ships without FFmpeg. Run `pip uninstall opencv-python && pip install opencv-contrib-python` to fix it. The `requirements.txt` in this repo already specifies the contrib build.
 
 ---
 
@@ -155,7 +169,7 @@ CV Live has two layers of settings:
 | Layer | Where it lives | When it changes | What it controls |
 |---|---|---|---|
 | **Static** | `.env` file (or environment variables) | Requires app restart | Camera index, resolution, S3 credentials, log level |
-| **Runtime** | `settings.yaml` | Live, via the web dashboard | Detection rate, segment length, disk limit, retention |
+| **Runtime** | `settings.yaml` | Live, via the web dashboard | FPS, detection rate, segment length, disk limit, gesture hold time |
 
 You don't *need* to create either file — both have safe defaults baked in.
 
@@ -169,7 +183,6 @@ Create a file named `.env` in the project folder. Here's a complete annotated ex
 CAMERA_INDEX=0
 FRAME_WIDTH=640
 FRAME_HEIGHT=480
-FPS=30
 
 # ========== AWS S3 (Optional) ==========
 # Leave S3_BUCKET_NAME empty (or remove these lines) to run in LOCAL MODE.
@@ -187,11 +200,6 @@ FPS=30
 # ========== Storage Paths ==========
 RECORDINGS_DIR=recordings
 LOGS_DIR=logs
-
-# ========== Gesture Behavior ==========
-# How long (in seconds) the user must hold a gesture before it triggers.
-# Lower = faster response but more accidental triggers.
-GESTURE_CONFIRMATION_SECONDS=10
 
 # ========== Logging ==========
 LOG_LEVEL=INFO
@@ -217,6 +225,17 @@ MAX_DISK_USAGE_PERCENT: 85
 
 # Maximum number of .mp4 files to keep locally.
 RETENTION_COUNT: 100
+
+# Camera frame rate. Live-tunable from the dashboard's FPS dropdown — when
+# you change it, the capture process reopens the camera and the recorder
+# rolls over to a fresh segment automatically. Note: the recorder uses the
+# ACTUAL FPS the camera driver reports, not the requested value, so
+# playback speed is always correct.
+FPS: 30
+
+# How long (in seconds) you must hold a gesture before it triggers an action.
+# Lower = snappier response. 3s is the sweet spot for most users.
+GESTURE_CONFIRMATION_SECONDS: 3.0
 ```
 
 All values are validated when you save them — bad inputs (like a negative `DETECTION_RATE`) are rejected.
@@ -227,18 +246,39 @@ All values are validated when you save them — bad inputs (like a negative `DET
 
 Make sure your virtual environment is active (`source .venv/bin/activate`), then:
 
-### Standard mode
+### Standard mode (web dashboard + terminal controls)
 
 ```bash
 python3 main.py
 ```
 
-You should see something like:
+You'll see:
 
 ```text
-INFO:     Started server process [1234]
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Dashboard: http://localhost:8000
+API docs:  http://localhost:8000/docs
+
+--- CV Live Terminal Controls ---
+  r = start recording
+  s = stop recording
+  q = quit
+--------------------------------
+```
+
+### Headless mode (no browser needed — for Raspberry Pi)
+
+```bash
+python3 main.py --headless
+```
+
+Control everything from the terminal with single keypresses (`r`, `s`, `q`). The API is still available for remote control via `curl`.
+
+### Custom host / port
+
+```bash
+python3 main.py --port 9000
+python3 main.py --host 127.0.0.1 --port 80
+python3 main.py --headless --port 9000
 ```
 
 ### Development mode (auto-reload on file changes)
@@ -247,7 +287,17 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-To stop the app, press **Ctrl+C** in the terminal.
+### Stopping the app
+
+Three ways to quit:
+
+| Method | Where |
+|---|---|
+| **Power button** (top-right of dashboard) | Browser |
+| **`q` key** | Terminal |
+| **Ctrl+C** | Terminal |
+
+All three trigger a clean shutdown: recording is stopped, child processes are joined, shared memory is released, and the camera is freed.
 
 ---
 
@@ -260,13 +310,20 @@ Open a browser and go to:
 
 You'll see:
 
-- A **live video feed** showing what the camera sees, with overlays.
-- A **status badge** (IDLE / RECORDING).
-- **Telemetry**: configured FPS, resolution, disk usage.
+- A **live video feed** showing what the camera sees, with gesture overlays drawn on top.
+- A **status badge** (IDLE / RECORDING) — turns red and pulses while recording.
+- **Stats cards**:
+  - **FPS dropdown** — pick `15`, `24`, `30`, or `60`. The camera reopens immediately. The recorder uses the **actual** FPS the driver reports, so playback speed is always correct even if the driver ignores your request.
+  - **Resolution** — current capture resolution.
+  - **Disk** — current disk usage percentage with a colored bar.
+  - **Gesture Guide** — quick reminder of the two gestures.
 - **Manual control buttons**: Start Recording / Stop Recording.
-- A **⚙️ Settings** button that opens a modal where you can tweak the runtime config (detection rate, segment duration, disk limit) and save it without restarting.
+- **Settings button** (gear icon) — opens a modal with runtime-tunable settings.
+- **Quit button** (power icon) — shuts down the entire application with a confirmation dialog.
 
-To find your device's IP address:
+All dashboard changes are validated by the backend and persisted to `settings.yaml` so they survive restarts.
+
+### Finding your device's IP address
 
 - **Mac**: `ipconfig getifaddr en0`
 - **Linux/Pi**: `hostname -I`
@@ -283,11 +340,48 @@ When the camera sees your hand, it'll show a small overlay on the video feed wit
 | ✌️ **Peace sign** (index + middle finger up, others down) | Start recording |
 | 🖐️ **Open palm** (all five fingers up) | Stop recording |
 
-You must **hold the gesture steady** for the configured number of seconds (default 10s — you can change this with `GESTURE_CONFIRMATION_SECONDS`). This prevents accidental triggers from random hand movements.
+You must **hold the gesture steady** for the configured number of seconds (default **3 seconds** — you can change this from the dashboard's settings panel). This prevents accidental triggers from random hand movements.
 
 The dashboard overlay will count up `0% → 100%` so you know how long is left. When it hits **CONFIRMED**, the action fires.
 
 After it fires, you have to lower your hand (or change the gesture) before the same one can fire again — the system doesn't spam-toggle while you keep holding.
+
+---
+
+## Tuning Performance & Responsiveness
+
+Everything in this section can be changed **live from the dashboard** — no restart, no editing files.
+
+### "I want it to feel snappier"
+
+| Setting | Default | Try |
+|---|---|---|
+| **Gesture Hold Time** | `3.0s` | `1.5s` (very fast) — accidental triggers become more likely |
+| **AI Detection Rate** | `5` (every 5th frame) | `2` or `3` — more CPU but the AI sees the gesture sooner |
+| **FPS** | `30` | `60` — only useful if your camera actually supports it |
+
+### "I want it to use less CPU / not overheat the Pi"
+
+| Setting | Default | Try |
+|---|---|---|
+| **AI Detection Rate** | `5` | `8`–`10` |
+| **FPS** | `30` | `15` or `24` — recording is still smooth, AI runs less |
+| **Model Complexity** | `0` (already light) | leave at `0` |
+
+The Pi-specific thermal protection (auto-throttling above 75°C) kicks in automatically — you don't need to configure anything for it.
+
+### "I want longer / shorter video chunks"
+
+Change **Segment Duration (Seconds)** in the Settings modal. Default is 300 (5 minutes). Each chunk is uploaded independently to S3 (in cloud mode) so smaller chunks = faster cloud delivery but more files; larger chunks = fewer files but more data lost if something interrupts an in-progress segment.
+
+### "I'm running out of disk space"
+
+Two settings work together:
+
+- **Max Disk Usage (%)** — when the disk is more than this percent full, the **oldest** recording is deleted to make room.
+- **Retention Count** — never keep more than this many `.mp4` files locally regardless of disk usage.
+
+Both checks run automatically; you can never get into a "disk full, app stuck" state.
 
 ---
 
@@ -333,9 +427,10 @@ The full Swagger UI is available at `http://<device-ip>:8000/docs` when the app 
 |---|---|---|
 | `GET` | `/` | Web dashboard |
 | `GET` | `/api/status` | `{"recording": true/false}` |
-| `GET` | `/metrics` | Disk usage, free space, FPS |
+| `GET` | `/metrics` | Disk usage, free space, actual FPS |
 | `POST` | `/api/start` | Start recording manually |
 | `POST` | `/api/stop` | Stop recording manually |
+| `POST` | `/api/quit` | Gracefully shut down the app |
 | `GET` | `/api/config` | All current settings |
 | `POST` | `/api/config` | Update one runtime setting |
 | `GET` | `/video_feed` | MJPEG live stream (use in `<img>` tags) |
@@ -360,6 +455,9 @@ curl -X POST http://localhost:8000/api/stop
 curl -X POST http://localhost:8000/api/config \
   -H "Content-Type: application/json" \
   -d '{"key": "DETECTION_RATE", "value": 3}'
+
+# Shut down the app remotely
+curl -X POST http://localhost:8000/api/quit
 ```
 
 For full request/response details, see [API.md](API.md) or the Swagger UI.
@@ -370,7 +468,7 @@ For full request/response details, see [API.md](API.md) or the Swagger UI.
 
 For production use on a Pi, you'll want the app to start automatically on boot and restart itself if it crashes. CV Live ships with two `systemd` service files for this:
 
-- `cv-live.service` — runs the camera/web app (`main.py`)
+- `cv-live.service` — runs the camera/web app (`main.py --headless`)
 - `cv-uploader.service` — runs the upload watcher (`upload_watcher.py`)
 
 These are deliberately separate so a crash in the camera service doesn't lose pending uploads, and vice versa.
@@ -416,7 +514,7 @@ For a deeper explanation of the service files and systemd commands, see [SERVICE
 
 ```
 cv-live/
-├── main.py                    # FastAPI entrypoint (web server + dashboard)
+├── main.py                    # FastAPI entrypoint + CLI (--headless, --port)
 ├── upload_watcher.py          # Standalone S3 upload daemon
 ├── settings.yaml              # Runtime-tunable settings
 ├── .env                       # Static settings (you create this; optional)
@@ -430,7 +528,7 @@ cv-live/
 ├── src/
 │   ├── config.py              # Pydantic-validated config (static + runtime)
 │   ├── service.py             # CameraService — orchestrates the pipeline
-│   ├── recorder.py            # VideoRecorder — writes mp4 segments
+│   ├── recorder.py            # VideoRecorder — writes H.264 mp4 segments
 │   ├── storage.py             # S3Uploader (with auto local-mode fallback)
 │   ├── gesture.py             # Gesture enum, classifier, debouncer
 │   ├── thermal.py             # CPU temperature reader (for thermal throttling)
@@ -438,13 +536,13 @@ cv-live/
 │   ├── models/
 │   │   └── hand_landmarker.task   # MediaPipe AI model (downloaded by you)
 │   └── processes/
-│       ├── shared_state.py    # Cross-process shared memory
-│       ├── capture.py         # Camera capture (separate process)
+│       ├── shared_state.py    # Cross-process shared memory + actual_fps
+│       ├── capture.py         # Camera capture (separate process, timeout-guarded)
 │       └── inference.py       # AI inference (separate process)
-└── tests/                     # pytest unit tests
-    ├── test_gesture_classifier.py
-    ├── test_debouncer.py
-    └── test_config.py
+└── tests/                     # pytest unit tests (no camera/MediaPipe needed)
+    ├── test_gesture_classifier.py  # Landmark → Gesture classification
+    ├── test_debouncer.py           # Gesture hold/confirm state machine
+    └── test_config.py              # Config proxy, validation, persistence
 ```
 
 ---
@@ -458,23 +556,29 @@ CV Live uses a **multi-process pipeline** so that camera capture, AI inference, 
 ### The three processes
 
 1. **CaptureProcess** (`src/processes/capture.py`)
-   Owns the camera. Reads frames as fast as the camera can deliver them and writes them to a shared-memory buffer. Sets `CAP_PROP_BUFFERSIZE = 1` so we never serve stale frames after a brief stall.
+   Owns the camera. Reads frames with a 5-second timeout (so a camera disconnect doesn't hang the process forever) and writes them to a shared-memory buffer. Sets `CAP_PROP_BUFFERSIZE = 1` so we never serve stale frames. Publishes the **actual** FPS the driver reported to shared state so the recorder uses the correct value for the MP4 header.
 
 2. **InferenceProcess** (`src/processes/inference.py`)
-   Reads frames (zero-copy) from the shared buffer and runs MediaPipe hand detection on them. Throttles itself: drops to half-speed inference when CPU temperature exceeds 75°C. Sends gesture state-change events back to the main process via a queue.
+   Reads frames (copy from shared buffer) and runs MediaPipe hand detection on them, with proper BGR→RGB conversion. Throttles itself: drops to half-speed inference when CPU temperature exceeds 75°C. Reads `DETECTION_RATE` from shared memory so dashboard changes apply immediately. Sends gesture state-change events back to the main process via a queue.
 
 3. **Main process** (`main.py` → `CameraService` in `src/service.py`)
    Hosts the FastAPI web server. Runs a thread that:
    - Waits on a per-consumer wakeup event (no polling, no busy loops)
+   - Checks child process health every 5 seconds and respawns crashed children
+   - Syncs the recorder's FPS with the actual camera FPS
    - Drains gesture events and feeds them to the `GestureDebouncer`
    - Draws overlays on the frame
    - Writes the frame to the `VideoRecorder` if recording is on
-   - Encodes a JPEG (at 15 FPS, throttled) for the MJPEG stream
+   - Encodes a JPEG (throttled to 25 FPS max) for the MJPEG stream
 
-The three processes communicate via:
-- **Shared memory** (`src/processes/shared_state.py`) — one zero-copy frame buffer with a deterministic name so leaked segments from a previous crash get cleaned up automatically.
+**Important**: `CameraService` is constructed lazily inside the FastAPI lifespan handler, not at module level. This prevents child processes (which re-import `__main__` under `spawn` semantics on macOS) from destroying the parent's shared memory.
+
+### Cross-process communication
+
+- **Shared memory** (`src/processes/shared_state.py`) — one frame buffer with a deterministic name (`cv_live_frame`) so leaked segments from a previous crash get cleaned up automatically.
 - **Per-consumer events** — the producer wakes each consumer with its own `multiprocessing.Event`, so consumers never steal wakeups from each other.
 - **A small result queue** for gesture state changes (depth 2; only state-change events are sent to avoid flooding).
+- **Shared `multiprocessing.Value`s** — `target_fps`, `actual_fps`, and `target_detection_rate` allow the API process and child processes to communicate live configuration changes without re-reading YAML.
 
 ### Why two services, not one?
 
@@ -486,19 +590,22 @@ The recorder and the uploader run as **independent systemd services**. The camer
 
 ### Performance highlights
 
-- ~30 FPS sustained on a Raspberry Pi 5 at 640×480
+- ~30 FPS sustained on a Raspberry Pi 5 at 640×480 (and 60 FPS on a Mac with the dropdown)
 - Sub-millisecond consumer wakeup latency (event-driven, no polling)
 - Frame drops impossible at the capture stage thanks to `CAP_PROP_BUFFERSIZE=1`
-- MJPEG encoding throttled to 15 FPS so the dashboard stream doesn't compete with the recorder for CPU
+- MJPEG encode rate auto-follows the camera FPS, capped at 25 FPS
 - Strict-monotonic timestamps for MediaPipe so NTP/DST clock jumps can't break inference
 - Disk space re-checked at every segment rollover, not just at the start
 - Thermal throttling: detection rate doubles when the CPU exceeds 75°C
+- Codec probed at startup with actual frame writes — fails fast if no working codec
+- Wall-clock segment rollover — robust regardless of FPS changes mid-recording
+- Camera read timeout (5 seconds) prevents indefinite hangs on disconnect
 
 ---
 
 ## Running the Tests
 
-CV Live has a small `pytest` suite covering the pure logic (gesture classifier, debouncer, config). It does **not** require a camera or MediaPipe — `mediapipe` is imported lazily so the tests run fast and on any machine.
+CV Live has a `pytest` suite covering the pure logic (gesture classifier, debouncer, config). It does **not** require a camera or MediaPipe — `mediapipe` is imported lazily so the tests run fast and on any machine.
 
 ```bash
 # Run all tests
@@ -511,7 +618,7 @@ python3 -m pytest tests/test_debouncer.py::test_holding_gesture_past_threshold_f
 python3 -m pytest tests/ -v
 ```
 
-You should see something like `24 passed in 0.05s`.
+You should see something like `25 passed in 0.05s`.
 
 ---
 
@@ -533,11 +640,36 @@ You should see something like `24 passed in 0.05s`.
   - The IAM user/role doesn't have `s3:ListBucket` or `s3:PutObject` on that bucket
   - Wrong `S3_REGION`
 
-### Recording starts but the video is empty / 0 bytes
-- The codec couldn't initialize. Check the logs for "Failed to initialize any video writer codec." Try installing FFmpeg system-wide (`brew install ffmpeg` or `sudo apt install ffmpeg`).
+### "No working video codec found!"
+The codec probe runs at startup and tests that frames can actually be written (not just that the writer opens). If it fails:
+
+```bash
+pip uninstall opencv-python
+pip install opencv-contrib-python
+```
+
+`opencv-contrib-python` ships with FFmpeg-enabled wheels on macOS and Linux, so the `avc1` (H.264) and `mp4v` codecs both work out of the box.
+
+### Recordings aren't appearing in the `recordings/` folder
+Look at the terminal log when you start a recording. The recorder prints exactly where it's writing:
+
+```
+Recording -> /path/to/recordings/rec_20260416_182546.mp4 (codec=avc1, 640x480 @ 30fps)
+```
+
+And when you stop:
+
+```
+Segment closed: /.../rec_20260416_182546.mp4 (193 frames, 1.2 MB)   ← success
+```
+
+If the file size is 0 bytes, the codec probe should have caught it at startup. If it didn't, try switching codecs by reinstalling opencv-contrib-python.
+
+### Recording works but the file is corrupted / unplayable
+You're probably stopping the app via SIGKILL or unplugging the Pi mid-recording. The file gets finalized only when `_close_file` runs. Use Ctrl+C, the dashboard quit button, the `q` terminal key, or `systemctl stop cv-live` for a graceful shutdown.
 
 ### The web dashboard works but the live feed is choppy / frozen
-- Check disk usage — if the disk is nearly full, the recorder will pause. The dashboard's telemetry bar shows current disk %.
+- Check disk usage — if the disk is nearly full, the recorder will pause.
 - Check CPU temperature on a Pi (`vcgencmd measure_temp`). If it's over 75°C, inference is being throttled.
 
 ### MediaPipe model file missing
@@ -547,7 +679,10 @@ FileNotFoundError: ... hand_landmarker.task
 You skipped step 4 of installation. Run the `curl` command from the [installation section](#4-download-the-ai-model).
 
 ### "Address already in use" on port 8000
-Another instance is already running. Kill it: `pkill -f "python3 main.py"` (or change the port in `main.py`).
+Another instance is already running. Kill it: `pkill -f "python3 main.py"` or use `--port 9000`.
+
+### Gestures detected but never fire
+Check `logs/app.log` for `[INFER]` lines like `Gesture change: None -> START_RECORDING`. If these appear but `Gesture confirmed` never does, the debouncer isn't getting continuous ticks — this was a past bug that's been fixed. If detection doesn't appear at all, ensure the model file exists at `src/models/hand_landmarker.task`.
 
 ---
 
@@ -561,6 +696,7 @@ Another instance is already running. Kill it: `pkill -f "python3 main.py"` (or c
 - **Do** set `MODEL_COMPLEXITY=0` and `DETECTION_RATE=5` on the Raspberry Pi for best performance.
 - **Do** start with **local mode** to verify everything works, then add S3 credentials later.
 - **Do** check `logs/app.log` if anything weird happens — it captures errors that may not show up in the terminal.
+- **Do** use `--headless` on a Pi with no display attached.
 
 ### ❌ DON'T
 

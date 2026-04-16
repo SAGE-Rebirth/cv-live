@@ -1,15 +1,47 @@
 [Unit]
-Description=CV Live Upload Watcher Service
-After=network.target
+Description=CV Live Upload Watcher (uploads finished mp4 segments to S3)
+Documentation=https://github.com/SAGE-Rebirth/cv-live
+After=network-online.target
+Wants=network-online.target
+# The watcher is intentionally independent of cv-live.service so that an
+# uploader crash never disturbs recording, and a camera crash never
+# stalls pending uploads.
 
 [Service]
-# CHANGE THESE PATHS TO MATCH YOUR PI SETUP
+Type=simple
+
+# === CHANGE THESE TO MATCH YOUR INSTALL ===
 User=pi
+Group=pi
 WorkingDirectory=/home/pi/cv-live
-ExecStart=/home/pi/cv-live/venv/bin/python upload_watcher.py
+ExecStart=/home/pi/cv-live/.venv/bin/python upload_watcher.py
+
+# === Crash resilience ===
 Restart=always
 RestartSec=10
+# The watcher's main loop catches KeyboardInterrupt for clean shutdown.
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+# === Resource limits ===
+# The watcher is light: a small bucket of memory + a fraction of one core
+# is plenty. These exist to prevent runaway behaviour from an unexpected
+# boto3 / network bug, not because the workload needs much.
+MemoryMax=200M
+CPUQuota=50%
+
+# === Logging ===
 Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# === Security hardening ===
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# The watcher needs to delete uploaded files from recordings/, move
+# failed uploads into quarantine/, and write to logs/.
+ReadWritePaths=/home/pi/cv-live/recordings /home/pi/cv-live/quarantine /home/pi/cv-live/logs
 
 [Install]
 WantedBy=multi-user.target

@@ -41,11 +41,10 @@ class _StaticSettings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=True)
 
-    # Camera
+    # Camera (size & index require restart; FPS is now runtime-tunable)
     CAMERA_INDEX: int = 0
     FRAME_WIDTH: int = 640
     FRAME_HEIGHT: int = 480
-    FPS: int = 30
 
     # Cloud (optional — empty bucket = local mode)
     S3_BUCKET_NAME: str = ""
@@ -57,20 +56,21 @@ class _StaticSettings(BaseSettings):
     RECORDINGS_DIR: str = "recordings"
     LOGS_DIR: str = "logs"
 
-    # Gesture confirmation: how long the user must hold the gesture before
-    # it triggers an action. Used by both the debouncer and the dashboard
-    # progress overlay (single source of truth).
-    GESTURE_CONFIRMATION_SECONDS: float = 10.0
-
 
 class _RuntimeSettings(BaseModel):
-    """Runtime config: settings.yaml. Mutable via dashboard."""
+    """Runtime config: settings.yaml. Mutable via the web dashboard."""
 
     DETECTION_RATE: int = Field(default=5, ge=1, le=60)
     MODEL_COMPLEXITY: int = Field(default=0, ge=0, le=1)
     RECORDING_SEGMENT_DURATION: int = Field(default=300, ge=1)
     MAX_DISK_USAGE_PERCENT: float = Field(default=85.0, gt=0, le=100)
     RETENTION_COUNT: int = Field(default=100, ge=1)
+    # Camera frame rate. Live-tunable; the capture process reopens the
+    # camera and the recorder rolls over to a fresh segment on change.
+    FPS: int = Field(default=30, ge=1, le=120)
+    # How long the user must hold a gesture before it triggers an action.
+    # 3s feels responsive without being trigger-happy.
+    GESTURE_CONFIRMATION_SECONDS: float = Field(default=3.0, ge=0.5, le=30.0)
 
 
 class _ConfigProxy:

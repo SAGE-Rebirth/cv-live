@@ -78,6 +78,22 @@ class CameraService:
         else:
             self.recorder.stop_recording()
 
+    def apply_runtime_change(self, key: str, value):
+        """
+        Hook called after Config.update_setting() succeeds. Pushes the new
+        value into whichever component owns it via shared multiprocessing
+        Values so child processes see the change immediately.
+        """
+        if key == "FPS":
+            new_fps = int(value)
+            self.shared_state.target_fps.value = new_fps
+            # Don't reconfigure the recorder here — the capture process will
+            # reopen the camera and publish the ACTUAL fps the driver settled
+            # on. The main loop picks that up and reconfigures the recorder
+            # with the real value, so the MP4 header matches reality.
+        elif key == "DETECTION_RATE":
+            self.shared_state.target_detection_rate.value = int(value)
+
     def _draw_overlay(self, frame, last_gesture):
         """Draw recording status + gesture confirmation progress."""
         cv2.putText(
@@ -107,50 +123,92 @@ class CameraService:
     def start(self):
         if self.running:
             return
-            
+
         logger.info("Starting Multi-Process Camera Service...")
         self.running = True
         self.shared_state.running_flag.value = True
-        
+
         # Start Child Processes
         self.capture_process.start()
         self.inference_process.start()
-        
+
         # Start Main Loop (in this process)
         self.processing_thread = threading.Thread(target=self._main_loop)
         self.processing_thread.start()
+
+    def _check_children(self):
+        """Detect crashed child processes and respawn them.
+
+        Called periodically from the main loop.  If a child has died the
+        corresponding ``multiprocessing.Process`` object can't be restarted,
+        so we create a fresh instance (re-using the same shared-state and
+        wakeup event) and start it.
+        """
+        if not self.capture_process.is_alive():
+            logger.error("CaptureProcess died — respawning.")
+            self.capture_process = CaptureProcess(
+                self.shared_state, Config.CAMERA_INDEX
+            )
+            self.capture_process.start()
+
+        if not self.inference_process.is_alive():
+            logger.error("InferenceProcess died — respawning.")
+            self.inference_process = InferenceProcess(
+                self.shared_state, self.result_queue, self._inference_wakeup
+            )
+            self.inference_process.start()
 
     def stop(self):
         logger.info("Stopping components...")
         self.running = False
         self.shared_state.running_flag.value = False
-        
+
         if self.recorder.is_recording:
             self.recorder.stop_recording()
-            
+
         self.processing_thread.join()
-        self.capture_process.join()
-        self.inference_process.join()
+        self.capture_process.join(timeout=5)
+        self.inference_process.join(timeout=5)
+        # Force-kill children that didn't exit within the timeout.
+        for p in (self.capture_process, self.inference_process):
+            if p.is_alive():
+                logger.warning(f"Force-killing {p.name}")
+                p.kill()
         self.shared_state.cleanup()
         logger.info("Service Stopped.")
 
     def _main_loop(self):
         last_gesture = None
         last_frame_index = -1
-        # Throttle MJPEG encoding: dashboard doesn't need 30 FPS, and JPEG
-        # encoding is expensive on Pi. ~15 FPS feels smooth enough.
-        encode_interval = 1.0 / 15.0
+        # Throttle MJPEG encoding to at most 25 FPS — anything faster is
+        # wasted bandwidth + CPU. We re-derive this from the recorder fps
+        # on every loop so live FPS changes from the dashboard apply.
         last_encode_time = 0.0
+        last_health_check = 0.0
 
         while self.running:
             # Block until producer signals a new frame (1s timeout for shutdown checks)
             self._main_wakeup.wait(timeout=1.0)
             self._main_wakeup.clear()
 
+            # Periodic child-process health check (~every 5 seconds).
+            now_hc = time.time()
+            if now_hc - last_health_check >= 5.0:
+                last_health_check = now_hc
+                self._check_children()
+
             current_index = self.shared_state.frame_index.value
             if current_index == last_frame_index:
                 continue  # spurious wakeup or shutdown
             last_frame_index = current_index
+
+            # Keep the recorder's FPS in sync with what the camera driver
+            # actually provides. The capture process writes actual_fps after
+            # every camera open — if it differs from the recorder, roll over.
+            actual = self.shared_state.actual_fps.value
+            if actual > 0 and actual != self.recorder.fps:
+                logger.info(f"Syncing recorder FPS to actual camera FPS: {self.recorder.fps} -> {actual}")
+                self.recorder.reconfigure_fps(actual)
 
             # Need a writable copy because we draw overlays / hand it to the recorder
             try:
@@ -158,15 +216,20 @@ class CameraService:
             except Exception:
                 continue
 
-            # Drain inference results
+            # Drain new inference events into last_gesture. Inference only
+            # emits state CHANGES (peace -> none -> peace), so the queue
+            # may stay empty for many frames while the user holds a gesture.
             while True:
                 try:
-                    gesture = self.result_queue.get_nowait()
+                    last_gesture = self.result_queue.get_nowait()
                 except queue.Empty:
                     break
-                # gesture is either a Gesture enum or None ("hand lost")
-                last_gesture = gesture
-                self.debouncer.feed(gesture)
+
+            # Feed the debouncer EVERY frame with the current state, not
+            # only on queue events. The debouncer is a clock-driven state
+            # machine — without continuous ticks it can never observe that
+            # the hold time has elapsed, and the gesture would never fire.
+            self.debouncer.feed(last_gesture)
 
             self._draw_overlay(frame, last_gesture)
 
@@ -174,7 +237,8 @@ class CameraService:
             if self.recorder.is_recording:
                 self.recorder.write_frame(frame)
 
-            # Throttled JPEG encode for the MJPEG stream
+            # Throttled JPEG encode for the MJPEG stream — capped at 25 FPS
+            encode_interval = 1.0 / min(max(self.recorder.fps, 1), 25)
             now = time.time()
             if now - last_encode_time >= encode_interval:
                 ret, buffer = cv2.imencode('.jpg', frame)

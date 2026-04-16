@@ -25,7 +25,7 @@ class InferenceProcess(multiprocessing.Process):
         detector = GestureDetector()
 
         last_processed_index = -1
-        current_detection_rate = max(1, int(Config.DETECTION_RATE))
+        current_detection_rate = max(1, self.shared_state.target_detection_rate.value)
         frame_counter = 0
         last_sent_gesture = "__init__"  # sentinel: never matches a real value
 
@@ -41,9 +41,11 @@ class InferenceProcess(multiprocessing.Process):
             last_processed_index = current_index
             frame_counter += 1
 
-            # Thermal Throttling Logic (re-read DETECTION_RATE in case dashboard changed it)
+            # Thermal Throttling Logic. Read detection rate from shared state
+            # so dashboard changes apply immediately (Config is a stale
+            # in-memory copy in this spawned child).
             if frame_counter % 100 == 0:
-                base_rate = max(1, int(Config.DETECTION_RATE))
+                base_rate = max(1, self.shared_state.target_detection_rate.value)
                 temp = get_cpu_temperature()
                 if temp > 75.0:
                     current_detection_rate = base_rate * 2
@@ -54,9 +56,9 @@ class InferenceProcess(multiprocessing.Process):
             if frame_counter % current_detection_rate != 0:
                 continue
 
-            # Process Frame. peek_frame is zero-copy; mp.Image copies on construction
-            # so we don't need to defensively copy here.
-            frame = self.shared_state.peek_frame()
+            # Process Frame. We need a stable copy because detect_gesture
+            # does BGR→RGB conversion and MediaPipe processing on it.
+            frame = self.shared_state.get_frame()
             if frame is None:
                 continue
 
@@ -69,6 +71,7 @@ class InferenceProcess(multiprocessing.Process):
             # Only send when the state changes — including transitions to
             # None ("hand lost") so the consumer's debouncer can reset.
             if gesture != last_sent_gesture:
+                logger.info(f"Gesture change: {last_sent_gesture} -> {gesture}")
                 try:
                     self.result_queue.put(gesture, block=False)
                     last_sent_gesture = gesture
